@@ -406,8 +406,8 @@ void mser(cv::Mat img, std::vector<cv::Rect>& bboxes, int delta, int max_variati
     // bounding boxes
     int minBboxes = 2;
 
-    groupRect(bboxes, minBboxes, eps);
-    // groupRectangles(bboxes, minBboxes, eps);
+    // groupRect(bboxes, minBboxes, eps);
+    groupRectangles(bboxes, minBboxes, eps);
 }
 
 

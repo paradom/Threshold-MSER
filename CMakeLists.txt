@@ -21,10 +21,8 @@ else()
     message(WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang and GCC.")
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
-
-find_package( OpenCV 4 REQUIRED )
-include_directories( ${OpenCV_INCLUDE_DIRS} )
+find_package(OpenCV 4 REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 # add the executable
 add_executable(segment 
@@ -32,7 +30,9 @@ add_executable(segment
     imageProcessing.hpp
     imageProcessing.cpp)
 
-target_link_libraries( segment ${OpenCV_LIBS} )
+target_link_libraries(segment ${OpenCV_LIBS})
+target_compile_features(segment PRIVATE cxx_std_17)
+target_link_libraries(segment stdc++fs)
 
 # add the binary tree to the search path for include files
 target_include_directories(segment PUBLIC "${PROJECT_BINARY_DIR}")

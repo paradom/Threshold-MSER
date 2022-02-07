@@ -232,13 +232,7 @@ int main(int argc, char **argv) {
         std::ofstream measurePtr(measureFile);
         measurePtr << "image,area,major,minor,perimeter,x1,y1,x2,y2,height" << endl; 
 
-        cv::VideoCapture capTest;
-        capTest.open(file.string(), CAP_ANY);
-
-        if (!capTest.isOpened()) {
-            cerr << "Invalid file " << file << endl;
-            continue;
-        }
+        // TODO: Add a way to check if file is valid
 
         // FIXME: cap.read() and cap.grad() are not working properly, aren't throwing errors when reading image
         // This is a temporary solution to determine if the input file is an image or video
@@ -248,8 +242,15 @@ int main(int argc, char **argv) {
 
         // If the file is a video
         if (!validImage) {
-            cv::VideoCapture cap;
-            cap.open(file.string(), CAP_ANY);
+            cv::VideoCapture cap(file.string());
+            // cap.open(file.string(), CAP_ANY);
+            if (!cap.isOpened()) {
+                cerr << "Invalid file: " << file.string() << endl;
+                continue;
+            }
+            else {
+                cout << "Opended file: " << file.string() << endl;
+            }
 
 	        int image_stack_counter = 0;
             int frameNumber = cap.get(CAP_PROP_FRAME_COUNT);
@@ -274,12 +275,12 @@ int main(int argc, char **argv) {
         }
         // If the file is an image 
         else {
-	    	cv::Mat imgRaw = cv::imread(file);
+	    	cv::Mat imgRaw = cv::imread(file.string());
             cv::Mat imgGray;
 	        cv::cvtColor(imgRaw, imgGray, cv::COLOR_RGB2GRAY);
 
             if (imgGray.empty()) {
-                cerr << "Error reading the image file " << file << endl;
+                cerr << "Error reading the image file " << file.string() << endl;
                 continue;
             }
             // TODO: Add the ability to concatenate frames like with videos
