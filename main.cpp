@@ -84,7 +84,6 @@ int main(int argc, char **argv) {
     options.delta = 1;
     options.variation = 20;
 
-
     // TODO: more robust options with std::find may be worth it
     if (argc == 1) {
         helpMsg(argv[0], options);
@@ -247,9 +246,6 @@ int main(int argc, char **argv) {
             if (!cap.isOpened()) {
                 cerr << "Invalid file: " << file.string() << endl;
                 continue;
-            }
-            else {
-                cout << "Opended file: " << file.string() << endl;
             }
 
 	        int image_stack_counter = 0;
