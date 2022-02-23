@@ -56,9 +56,10 @@ void helpMsg(string executable, Options options) {
         << left << setw(30) << "Segment a directory of images by utilizing the MSER method.\n\n"
         << left << setw(30) << "  -i, --input" << "Directory of video files to segment\n"
         << left << setw(30) << "  -o, --output-directory" << "Output directory where segmented images should be stored (Default: " << options.outputDirectory << ")\n"
-        << left << setw(30) << "  -n, --num-concatenate" << "The number of frames that will be vertically concatenated (Default:" << options.numConcatenate <<  ")\n"
+        << left << setw(30) << "  -n, --num-concatenate" << "The number of frames that will be vertically concatenated (Default: " << options.numConcatenate <<  ")\n"
         << left << setw(30) << "  -s, --signal-to-noise" << "The cutoff signal to noise ratio that is used in determining\n"
         << left << setw(30) << "" << "which frames from the video file get segmented (Default: " << options.signalToNoise << ")\n"
+        << left << setw(30) << "  -p, --outlier-percent" << "Percentage of darkest and lightest pixels to throw out before flat-fielding (Default: " << options.outlierPercent << "\n"
         << left << setw(30) << "  -M, --maximum" << "Maximum area of a segmented blob (Default: " << options.maximum << ")\n" 
         << left << setw(30) << "  -m, --minimum" << "Minimum area of a segmented blob. (Default: " << options.minimum << ")\n"
         << left << setw(30) << "  -d, --delta" << "Delta is a parameter for MSER. Delta is the number of steps (changes\n"
@@ -76,12 +77,13 @@ int main(int argc, char **argv) {
     Options options;
     options.input = "";
     options.outputDirectory = "out";
-    options.signalToNoise = 55;
+    options.signalToNoise = 50;
+    options.outlierPercent = .20;
     options.numConcatenate = 1;
     options.minimum = 50;
     options.maximum = 400000;
     options.epsilon = .1;
-    options.delta = 1;
+    options.delta = 10;
     options.variation = 20;
 
     // TODO: more robust options with std::find may be worth it
@@ -150,9 +152,8 @@ int main(int argc, char **argv) {
             // Validate the input type
             options.epsilon = stof(argv[i+1]); // FIXME: may throw error if not int
 
-            if (options.epsilon > 1 or options.epsilon < 0) {
-                cerr << options.epsilon << " is not a valid input. Epsilon must be a float between 0 and 1." << endl;
-
+            if (options.epsilon < 0) {
+                cerr << options.epsilon << " is not a valid input. Epsilon must be a non-negative float." << endl;
                 return 1;
             }
             i+=2;
@@ -172,6 +173,15 @@ int main(int argc, char **argv) {
                 return 1;
             }
             options.variation = stoi(argv[i+1]);
+            i+=2;
+		} else if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--outlier-percent") == 0) {
+            // Validate the input type
+            options.outlierPercent = stof(argv[i+1]); // FIXME: may throw error if not int
+
+            if (options.outlierPercent > 1 or options.outlierPercent < 0) {
+                cerr << options.outlierPercent << " is not a valid input. Outlier percent must be a float between 0 and 1." << endl;
+                return 1;
+            }
             i+=2;
 		} else {
             // Display invalid option message

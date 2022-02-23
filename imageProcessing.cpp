@@ -113,7 +113,7 @@ void chopThreshold(const cv::Mat &src, cv::Mat &dst, int thresh){
 
 void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstream& measurePtr, std::string imgName) {
     cv::Mat imgCorrect;
-    flatField(img, imgCorrect, .5);
+    flatField(img, imgCorrect, options.outlierPercent);
 
 
     std::vector<cv::Rect> bboxes;
@@ -129,8 +129,12 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
     cv::Mat imgProcess;
     preprocess(imgCorrect, imgProcess);
 
-    // If the SNR is less than 55 then the image will have many false segments
+    // If the SNR is less than options.signalToNoise then the image will have many false segments
     float imgSNR = SNR(img);
+
+    #if defined(VISUAL_MODE)
+    cout << "Image SNR: " << imgSNR << endl;
+    #endif
     if (imgSNR > options.signalToNoise) {
         mser(imgProcess, bboxes, options.delta, options.variation, options.epsilon);
     } else {
@@ -312,6 +316,28 @@ public:
 };
 
 /*
+ * This class can be used to pass into the partition function in order to create
+ * a grouping of the rectangles accross the image
+ *
+ * If eps < 1, then rectangles need to overlap more to be grouped
+ * If eps >= 1, then rectangles close to each other will be grouped
+ *
+ */
+class OverlapRects2
+{
+public:
+    OverlapRects2(double _eps) : eps(_eps) {}
+    inline bool operator()(const Rect& r1, const Rect& r2) const
+    {
+        double deltax = eps * (r1.width + r2.width) * 0.5;
+        double deltay = eps * (r1.height + r2.height) * 0.5;
+        return std::abs(r1.x - r2.x) <= deltax &&
+            std::abs(r1.y - r2.y) <= deltay;
+    }
+    double eps;
+};
+
+/*
  * Function: groupRect
  *
  * Reimplements the OpenCV groupRectangles function to group rectangles by our own
@@ -330,7 +356,7 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     std::vector<int> labels;
     // Third argument of partion is a predicate operator that looks for a method of the class
     // that will return true when elements are apart of the same partition
-    int nclasses = partition(rectList, labels, OverlapRects(eps));
+    int nclasses = partition(rectList, labels, OverlapRects2(eps));
 
     // labels correspond to the location of the rectangle in space 
     std::vector<cv::Rect> rrects(nclasses);
@@ -406,8 +432,8 @@ void mser(cv::Mat img, std::vector<cv::Rect>& bboxes, int delta, int max_variati
     // bounding boxes
     int minBboxes = 2;
 
-    // groupRect(bboxes, minBboxes, eps);
-    groupRectangles(bboxes, minBboxes, eps);
+    groupRect(bboxes, minBboxes, eps);
+    // groupRectangles(bboxes, minBboxes, eps);
 }
 
 

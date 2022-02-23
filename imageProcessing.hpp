@@ -47,6 +47,7 @@ struct Options
     float epsilon;
     int delta;
     int variation;
+    float outlierPercent;
 };
 
 bool containExt(const std::string s, std::string arr[], int len);
