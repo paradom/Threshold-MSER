@@ -43,7 +43,7 @@
 
 #include "imageProcessing.hpp"
 
-#if defined(WITH_OPENMP) and !defined(VISUAL_MODE)
+#if defined(WITH_OPENMP) and !defined(WITH_VISUAL)
     #include "omp.h" // OpenMP
 #endif
 
@@ -63,10 +63,10 @@ void helpMsg(string executable, Options options) {
         << left << setw(30) << "  -M, --maximum" << "Maximum area of a segmented blob (Default: " << options.maximum << ")\n" 
         << left << setw(30) << "  -m, --minimum" << "Minimum area of a segmented blob. (Default: " << options.minimum << ")\n"
         << left << setw(30) << "  -d, --delta" << "Delta is a parameter for MSER. Delta is the number of steps (changes\n"
-        << left << setw(30) << "" << "in pixel brighness) MSER uses to compare the size of connected regions.\n" 
+        << left << setw(30) << "" << "in pixel brightness) MSER uses to compare the size of connected regions.\n" 
         << left << setw(30) << "" <<  "A smaller delta will produce more segments. (Default: " << options.delta << ")\n"
-        << left << setw(30) << "  -v, --variation" << "Maximum variation of the regions area between delta threshold.\n"
-        << left << setw(30) << "" <<  "Larger values lead to more segment. (Default: " << options.variation << ")\n" 
+        << left << setw(30) << "  -v, --variation" << "Maximum variation of the region's area between delta threshold.\n"
+        << left << setw(30) << "" <<  "Larger values lead to more segments. (Default: " << options.variation << ")\n" 
         << left << setw(30) << "  -e, --epsilon" << "Float between 0 and 1 that represents the maximum overlap between\n"
         << left << setw(30) << "" << "two rectangle bounding boxes. 0 means that any overlap will mean\n"
         << left << setw(30) << "" << "that the bounding boxes are treated as the same. (Default: " << options.epsilon << ")\n" << endl;
@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
     options.numConcatenate = 1;
     options.minimum = 50;
     options.maximum = 400000;
-    options.epsilon = .1;
+    options.epsilon = 1;
     options.delta = 10;
     options.variation = 20;
 

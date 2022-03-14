@@ -39,11 +39,11 @@ target_include_directories(segment PUBLIC "${PROJECT_BINARY_DIR}")
 
 # NOTE: Enabling visual mode will disable the use of OpenMP
 option(WITH_OPENMP "Compile the project with OpenMP" ON)
-option(VISUAL_MODE "Enable visual mode, this will give previews of 
+option(WITH_VISUAL "Enable visual mode, this will give previews of 
     segments to be cropped. NOTE: This will disable OpenMP" OFF)
 
-if (VISUAL_MODE)
-    target_compile_definitions(segment PRIVATE "VISUAL_MODE")
+if (WITH_VISUAL)
+    target_compile_definitions(segment PRIVATE "WITH_VISUAL")
     set(WITH_OPENMP OFF)
 endif()
 if (WITH_OPENMP)
@@ -54,7 +54,7 @@ if (WITH_OPENMP)
         set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
     endif()
-    set(VISUAL_MODE OFF)
+    set(WITH_VISUAL OFF)
 endif()
 
 # TODO: add testing functions
