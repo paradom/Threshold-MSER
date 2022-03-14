@@ -115,7 +115,6 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
     cv::Mat imgCorrect;
     flatField(img, imgCorrect, options.outlierPercent);
 
-
     std::vector<cv::Rect> bboxes;
 
     #if defined(VISUAL_MODE)
@@ -231,7 +230,7 @@ void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Op
         float height = bboxes[k].height;
         float width = bboxes[k].width;
         
-        // Determine if box is irregularly shapped
+        // Determine if box is irregularly shapped (Abnormally long and thin)
         int hwRatio = 10;
         if ( width < 30 && height > hwRatio * width )
             continue;
@@ -262,11 +261,11 @@ void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Op
         }
 
         // Re-scale the crop of the image after getting the measurement data written to a file
-        cv::Rect scaledBbox = rescaleRect(bboxes[k], .5);
+        cv::Rect scaledBbox = rescaleRect(bboxes[k], 1.5);
 
         // Create a new crop using the intersection of rectangle objects and the image
         cv::Rect imgRect(0, 0, imgCorrect.cols, imgCorrect.rows); // use imgRect to make sure box doesn't go off the edge
-        cv::Mat imgCropCorrect = Mat(imgCorrect, scaledBbox & imgRect);
+        cv::Mat imgCropCorrect = Mat(imgCorrect, scaledBbox & imgRect); // TODO: check the speed of this operation
         cv::imwrite(correctImgFile, imgCropCorrect);
 
         // Crop the original image
