@@ -114,11 +114,47 @@ void chopThreshold(const cv::Mat &src, cv::Mat &dst, int thresh){
     src.copyTo(dst, mask);
 }
 
+void getHist(const cv::Mat img, cv::Mat& hist) {
+    int histSize = 256;
+    float range[] = {0, 256};
+    const float *histRange = {range};
+
+    bool uniform = true;
+    bool accumulate = false;
+
+    cv::calcHist(&img, 1, 0, cv::Mat(), hist, 1, &histSize,
+                 &histRange, uniform, accumulate);
+}
+
+void drawHistogram(cv::Mat& hist) {
+    int histSize = 256;
+    int hist_w = 512;
+    int hist_h = 400;
+    int bin_w = cvRound((double)hist_w / histSize);
+
+    cv::Mat histImage(hist_h, hist_w, CV_8UC3, cv::Scalar(0, 0, 0));
+
+    cv::normalize(hist, hist, 0, histImage.rows, cv::NORM_MINMAX, -1,
+                  cv::Mat());
+
+    for( int i = 1; i < histSize; i++ ) { 
+        cv::line(
+            histImage,
+            cv::Point(bin_w * (i-1), hist_h - cvRound(hist.at<float>(i-1))),
+            cv::Point(bin_w * (i), hist_h - cvRound(hist.at<float>(i))),
+            cv::Scalar(255, 0, 0), 2, 8, 0);
+    }
+    
+    cv::namedWindow("calcHist Demo", cv::WINDOW_AUTOSIZE);
+    cv::imshow("calcHist Demo", histImage);
+}
+
 void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstream& measurePtr, std::string imgName) {
     cv::Mat imgCorrect;
     flatField(img, imgCorrect, options.outlierPercent);
 
     std::vector<cv::Rect> bboxes;
+
 
     #if defined(WITH_VISUAL)
     cv::imshow("viewer", img);
@@ -126,23 +162,41 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
 
     cv::imshow("viewer", imgCorrect);
     cv::waitKey(0); 
+
+    cv::imshow("viewer", imgClahe);
+    cv::waitKey(0); 
+
+    cv::Mat imgHeq;
+    cv::equalizeHist(imgCorrect, imgHeq);
+
+    cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(40, Size(8,8));
+    cv::Mat imgClahe;
+    clahe->apply(imgCorrect, imgClahe);
+    // cv::imshow("viewer", imgHeq);
+    // cv::waitKey(0); 
     #endif
 
     cv::Mat imgProcess;
     preprocess(imgCorrect, imgProcess);
 
     // If the SNR is less than options.signalToNoise then the image will have many false segments
-    float imgSNR = SNR(imgCorrect);
 
     #if defined(WITH_VISUAL)
+    float imgSNR = SNR(imgCorrect);
     cout << "Image SNR: " << imgSNR << endl;
+
+    cv::Mat histImg;
+    getHist(imgCorrect, histImg); 
+    drawHistogram(histImg);
+
     #endif
-    if (imgSNR < options.signalToNoise) {
-        mser(imgProcess, bboxes, options.delta, options.variation, options.epsilon);
-    } else {
+    // if (imgSNR < options.signalToNoise) {
+    //     mser(imgProcess, bboxes, options.delta, options.variation, options.epsilon);
+    // } else {
         // Create a mask that includes all of the regions of the image with
         // the darkest pixels which MSER method can be performed on.
-        int thresh = 160; // Larger thresh means more segments
+
+        int thresh = 140; 
         cv::Mat imgThresh;
         cv::threshold(imgProcess, imgThresh, thresh, 255, THRESH_BINARY);
 
@@ -191,7 +245,7 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
         #endif
 
         mser(imgCorrectMask, bboxes, options.delta, options.variation, options.epsilon);
-    }
+    // }
 
     saveCrops(img, imgCorrect, bboxes, options, imgDir, measurePtr, imgName);
 }
@@ -283,6 +337,9 @@ void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Op
     cv::imshow("viewer", imgBboxes);
     cv::waitKey(0);
     #endif
+
+	std::string bboxFrame = frameDir + "/" + imgName + "_bboxes.tif";
+	cv::imwrite(bboxFrame, imgBboxes);
 }
 
 // Rescale the crop of the image after getting the measurement data written to a file
@@ -478,7 +535,7 @@ void preprocess(const cv::Mat &src, cv::Mat &dst) {
     // open is useful in removing noise in the image
     Point anchor = cv::Point(-1, -1);
     cv::Mat kernel = getStructuringElement(cv::MORPH_ELLIPSE,
-               cv::Size(7, 7),
+               cv::Size(10, 10),
                anchor);
 
     cv::morphologyEx(src, dst, cv::MORPH_OPEN, kernel); // open is a combination of erosion and dialation
@@ -511,6 +568,8 @@ void flatField(cv::Mat& src, cv::Mat& dst, float outlierPercent) {
     cv::divide(src, imgCalib, dst, 255); // performs the flat fielding by dividing the arrays
 }
 
+
+// FIXME: Need to rewrite function to clean up. Extracted from old segmentation tool.
 void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nChannels) {
 	// trimMean calculates the trimmed mean of the values in img.
 	// If img is a vector, tMean is the mean of img, excluding the highest and lowest k data values,
