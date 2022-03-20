@@ -145,63 +145,54 @@ void drawHistogram(cv::Mat& hist) {
             cv::Scalar(255, 0, 0), 2, 8, 0);
     }
     
-    cv::namedWindow("calcHist Demo", cv::WINDOW_AUTOSIZE);
-    cv::imshow("calcHist Demo", histImage);
+    cv::namedWindow("calcHist", cv::WINDOW_AUTOSIZE);
+    cv::imshow("calcHist", histImage);
 }
 
 void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstream& measurePtr, std::string imgName) {
+
+    //auto start = std::chrono::steady_clock::now();
     cv::Mat imgCorrect;
     flatField(img, imgCorrect, options.outlierPercent);
+    // auto end = std::chrono::steady_clock::now();
+    // std::chrono::duration<double> elapsed_seconds = end-start;
+    // std::cout << "Flatfield time: " << elapsed_seconds.count() << "s\n";    
 
     std::vector<cv::Rect> bboxes;
-
 
     #if defined(WITH_VISUAL)
     cv::imshow("viewer", img);
     cv::waitKey(0); 
 
-    cv::imshow("viewer", imgCorrect);
-    cv::waitKey(0); 
-
-    cv::imshow("viewer", imgClahe);
-    cv::waitKey(0); 
-
-    cv::Mat imgHeq;
-    cv::equalizeHist(imgCorrect, imgHeq);
-
-    cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(40, Size(8,8));
-    cv::Mat imgClahe;
-    clahe->apply(imgCorrect, imgClahe);
-    // cv::imshow("viewer", imgHeq);
-    // cv::waitKey(0); 
-    #endif
-
-    cv::Mat imgProcess;
-    preprocess(imgCorrect, imgProcess);
-
-    // If the SNR is less than options.signalToNoise then the image will have many false segments
-
-    #if defined(WITH_VISUAL)
-    float imgSNR = SNR(imgCorrect);
-    cout << "Image SNR: " << imgSNR << endl;
-
+    // Show pixel histogram
     cv::Mat histImg;
     getHist(imgCorrect, histImg); 
     drawHistogram(histImg);
-
     #endif
-    // if (imgSNR < options.signalToNoise) {
-    //     mser(imgProcess, bboxes, options.delta, options.variation, options.epsilon);
-    // } else {
+
+    // cv::Mat imgProcess;
+    // preprocess(imgCorrect, imgProcess);
+
+    // If the SNR is less than options.signalToNoise then the image will have many false segments
+
+    float imgSNR = SNR(imgCorrect);
+    #if defined(WITH_VISUAL)
+    cout << "Image SNR: " << imgSNR << endl;
+    #endif
+
+    if (imgSNR > options.signalToNoise) {
+        mser(imgCorrect, bboxes, options.delta, options.variation, options.epsilon);
+    } else {
         // Create a mask that includes all of the regions of the image with
         // the darkest pixels which MSER method can be performed on.
 
         int thresh = 140; 
         cv::Mat imgThresh;
-        cv::threshold(imgProcess, imgThresh, thresh, 255, THRESH_BINARY);
+        cv::threshold(imgCorrect, imgThresh, thresh, 255, THRESH_BINARY);
 
 	    cv::Mat mask = cv::Mat::zeros(img.size(), img.type());
 	    cv::Mat imgCorrectMask(img.size(), img.type(), cv::Scalar(255));
+
 
         bool contour = true;
         bool mesh = false;
@@ -245,7 +236,7 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
         #endif
 
         mser(imgCorrectMask, bboxes, options.delta, options.variation, options.epsilon);
-    // }
+    }
 
     saveCrops(img, imgCorrect, bboxes, options, imgDir, measurePtr, imgName);
 }
@@ -439,7 +430,6 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     std::vector<int> labels;
     // Third argument of partion is a predicate operator that looks for a method of the class
     // that will return true when elements are apart of the same partition
-    eps = 1;
     int nclasses = partition(rectList, labels, OverlapRects2b(eps));
 
     // labels correspond to the location of the rectangle in space 
@@ -447,38 +437,20 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     std::vector<int> rweights(nclasses, 0);
     int nlabels = (int)labels.size();
 
-    bool method1 = true;
-    bool method2 = false;
-
-    if(method1) {
-        int uniqueLabels = 0;
-        for (int i = 0; i < nlabels; i++)
+    for (int i = 0; i < nlabels; i++)
+    {
+        int cls = labels[i];
+        if (rectList[i].width > rrects[cls].width)
         {
-            int cls = labels[i];
-            if (rectList[i].width > rrects[cls].width)
-            {
-                rrects[cls].width = rectList[i].width;
-                rrects[cls].x = rectList[i].x;
-                rrects[cls].y = rectList[i].y;
-            }
-            if (rectList[i].height > rrects[cls].height)
-            {
-                rrects[cls].height = rectList[i].height;
-                rrects[cls].x = rectList[i].x;
-                rrects[cls].y = rectList[i].y;
-            }
-            if (rweights[cls] == 0)
-                uniqueLabels++;
-            rweights[cls]++;
+            rrects[cls].width = rectList[i].width;
+            rrects[cls].x = rectList[i].x;
         }
-    }
-    if(method2){
-        for (int i = 0; i < nlabels; i++)
+        if (rectList[i].height > rrects[cls].height)
         {
-            int cls = labels[i];
-            rrects[cls] = rrects[cls] | rectList[i];
-            rweights[cls]++;
+            rrects[cls].height = rectList[i].height;
+            rrects[cls].y = rectList[i].y;
         }
+        rweights[cls]++;
     }
 
     rectList.clear();
@@ -517,8 +489,8 @@ void mser(cv::Mat img, std::vector<cv::Rect>& bboxes, int delta, int max_variati
     int minBboxes = 2;
 
     // auto start = std::chrono::steady_clock::now();
-    // groupRect(bboxes, minBboxes, eps);
-    groupRectangles(bboxes, minBboxes, eps);
+    groupRect(bboxes, minBboxes, eps);
+    // groupRectangles(bboxes, minBboxes, eps);
     // auto end = std::chrono::steady_clock::now();
     // std::chrono::duration<double> elapsed_seconds = end-start;
     // std::cout << "Group Rect time: " << elapsed_seconds.count() << "s\n";    
@@ -573,55 +545,96 @@ void flatField(cv::Mat& src, cv::Mat& dst, float outlierPercent) {
 void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nChannels) {
 	// trimMean calculates the trimmed mean of the values in img.
 	// If img is a vector, tMean is the mean of img, excluding the highest and lowest k data values,
-	// where k=n*(outlierPercent/100)/2 and where n is the number of values in img. For a matrix input,
+	// where k=height*(outlierPercent/100)/2 and where height is the height of the image. For a matrix input,
 	// tMean is a row vector containing the trimmed mean of each column of img. For n-D arrays,
 	// trimMean operates along the first non-singleton dimension. outlierPercent is a scalar between 0 and 100d
 
 	switch (nChannels){
 	    case 1: {
-	    	tMean.create(img.rows, img.cols, CV_8UC1);
-
-	    	cv::Mat bChannel(img.rows, img.cols, CV_8UC1); // black color channel
-	    	cv::Mat out[] = {bChannel};
-	    	cv::Mat tempCol;
-	    	cv::Mat maskCol;
-
-	    	cv::Scalar meanCol;
-	    	double meanCol1;
-	    	int cnt1, cnt2; 
-	    	int k, n;
+            cv::Mat sort;
+	    	cv::sort(img, sort, cv::SORT_EVERY_COLUMN);
 	    	int height = img.rows, width = img.cols;
-	    	int from_to[] = {0,0};
 
-            // mask removes the top and bottom n elements
-	    	n = height;
-	    	k = round(n*(outlierPercent/100)/2);
-	    	maskCol.create(n, 1, CV_8UC1);
+            // Get a subset of the matrix entries so that they can be averaged
+	    	int k = round(img.rows*outlierPercent/2); // Calculate the number of outlier elements
+            
+            // Create a mask with 0's for the top and bottom k elements
+	    	cv::Mat maskCol = Mat::ones(height, 1, CV_8UC1);
+            for (int cnt1=0; cnt1<k; cnt1++) {
+	    	    maskCol.at<int8_t>(cnt1,0) = 0;
+            }
+            for (int cnt1=(height-k); cnt1<height; cnt1++) {
+	    	    maskCol.at<int8_t>(cnt1,0) = 0;
+            }
+            cv::Mat mask;
+            cv::repeat(maskCol,1,width,mask);
 
-	    	for(cnt1=0;cnt1<height;cnt1++){
-	    		if ((cnt1>=0 && cnt1<=k) || ((cnt1>=(height-k) && cnt1<=height)) ) {
-	    			maskCol.at<int8_t>(cnt1,0) = 0;
-	    		} else {
-	    			maskCol.at<int8_t>(cnt1,0) = 1;
-	    		}
-	    	}
+            cv::Mat imgMask;
+            sort.copyTo(imgMask,mask);
 
-	    	// Split the color channels
-	    	mixChannels(&img, 1, out, 1, from_to, 1); 
+            // get the column-wise average of the image.
+            cv::Mat average;
+            cv::reduce(imgMask, average, 0, cv::REDUCE_AVG);
 
-	    	cv::sort(bChannel, bChannel, cv::SORT_EVERY_COLUMN);
-	    	for(cnt2=0;cnt2<width;cnt2++){
-	    		tempCol = bChannel.col(cnt2);
-	    		tempCol = tempCol.mul(maskCol);
-
-	    		meanCol = mean(tempCol);
-	    		meanCol1 = meanCol[0];
-	    		bChannel.col(cnt2) = cv::Mat::ones(height, 1, bChannel.type())*meanCol1; // make a column that has the average value of the column
-	    	}
-	    	merge(out, 1, tMean);
+            // Create the trimmed mean matrix 
+            cv::repeat(average, height, 1, tMean);
 
 	    	break;
 	    }
+	    case -2: { // Old 1 channel tMean
+            // Sort the img matrix
+	    	cv::sort(img, tMean, cv::SORT_EVERY_COLUMN);
+
+            // Calculate the number of outlier elements
+	    	int height = img.rows, width = img.cols;
+	    	int k = round(height*outlierPercent/2);
+
+            // Create a mask with 0's for the top and bottom k elements
+	    	cv::Mat maskCol = Mat::ones(height, 1, CV_8UC1);
+            for (int cnt1=0; cnt1<k; cnt1++) {
+	    	    maskCol.at<int8_t>(cnt1,0) = 0;
+            }
+            for (int cnt1=(height-k); cnt1<height; cnt1++) {
+	    	    maskCol.at<int8_t>(cnt1,0) = 0;
+            }
+
+
+	    	cv::Mat tempCol;
+	    	cv::Scalar meanCol;
+	    	for(int cnt2=0;cnt2<width;cnt2++){
+	    		tempCol = tMean.col(cnt2).mul(maskCol);
+                
+	    		double mean = cv::mean(tempCol)[0]; // Get the mean of the first channel
+	    		tMean.col(cnt2) = Mat::ones(height, 1, tMean.type())*mean; // make a column that has the average value of the column
+	    	}
+
+	    	break;
+	    }
+        // TODO: there are 0 elements that are included in the mean, this should mess with the flat fielding
+	    case -1: {
+            cv::Mat sort;
+	    	cv::sort(img, sort, cv::SORT_EVERY_COLUMN);
+	    	int height = img.rows, width = img.cols;
+
+            // Get a subset of the matrix entries so that they can be averaged
+	    	int k = round(img.rows*outlierPercent/2); // Calculate the number of outlier elements
+
+            cv::Mat imgMask;
+            sort(cv::Rect(0,k,img.cols,img.rows-(2*k))).copyTo(imgMask);
+            cout << imgMask.size() << endl;
+
+            // get the column-wise average of the image.
+            cv::Mat average;
+            cv::reduce(imgMask, average, 0, cv::REDUCE_AVG);
+            cout << average.size() << endl;
+
+            // Create the trimmed mean matrix 
+            cv::repeat(average,img.rows,1,tMean);
+
+	    	break;
+	    }
+    
+        // NOTE: 3 channel version of this function is still under construction
 	    case 3: {
 	    	tMean.create(img.rows,img.cols, CV_8UC3);
 
@@ -638,7 +651,7 @@ void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nCha
 	    	int from_to[] = {0,0, 1,1, 2,2};
 
 	    	n = height;
-	    	k = round(n*(outlierPercent/100)/2);
+	    	k = round(n*(outlierPercent)/2);
 	    	maskCol.create(n, 1, CV_8UC1);
 
 	    	for(cnt1=0;cnt1<height;cnt1++){

@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
     options.input = "";
     options.outputDirectory = "out";
     options.signalToNoise = 50;
-    options.outlierPercent = .20;
+    options.outlierPercent = .05;
     options.numConcatenate = 1;
     options.minimum = 50;
     options.maximum = 400000;
