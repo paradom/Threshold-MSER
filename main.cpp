@@ -82,9 +82,9 @@ int main(int argc, char **argv) {
     options.numConcatenate = 1;
     options.minimum = 50;
     options.maximum = 400000;
-    options.epsilon = 1;
-    options.delta = 10;
-    options.variation = 20;
+    options.epsilon = 1.3;
+    options.delta = 4;
+    options.variation = 100;
 
     // TODO: more robust options with std::find may be worth it
     if (argc == 1) {

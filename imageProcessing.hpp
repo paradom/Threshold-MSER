@@ -58,7 +58,7 @@ std::string convertInt(int number, int fill=4);
 
 cv::Rect rescaleRect(const cv::Rect& rect, float scale=.5);
 
-void preprocess(const cv::Mat& src, cv::Mat& dst);
+void preprocess(const cv::Mat& src, cv::Mat& dst, float erosion_size);
 
 float SNR(cv::Mat& img);
 

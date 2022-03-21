@@ -150,36 +150,34 @@ void drawHistogram(cv::Mat& hist) {
 }
 
 void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstream& measurePtr, std::string imgName) {
-
-    //auto start = std::chrono::steady_clock::now();
-    cv::Mat imgCorrect;
-    flatField(img, imgCorrect, options.outlierPercent);
-    // auto end = std::chrono::steady_clock::now();
-    // std::chrono::duration<double> elapsed_seconds = end-start;
-    // std::cout << "Flatfield time: " << elapsed_seconds.count() << "s\n";    
-
-    std::vector<cv::Rect> bboxes;
-
     #if defined(WITH_VISUAL)
     cv::imshow("viewer", img);
     cv::waitKey(0); 
 
-    // Show pixel histogram
-    cv::Mat histImg;
-    getHist(imgCorrect, histImg); 
-    drawHistogram(histImg);
+    // Start timer
+    auto start = std::chrono::steady_clock::now();
+    #endif
+    
+    // Flatfield the image to remove the vertical lines
+    cv::Mat imgCorrect;
+    flatField(img, imgCorrect, options.outlierPercent);
+
+    #if defined(WITH_VISUAL)
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end-start;
+    std::cout << "Flatfield time: " << elapsed_seconds.count() << "s\n";    
     #endif
 
     // cv::Mat imgProcess;
-    // preprocess(imgCorrect, imgProcess);
+    // preprocess(imgCorrect, imgProcess, 1);
 
     // If the SNR is less than options.signalToNoise then the image will have many false segments
-
     float imgSNR = SNR(imgCorrect);
     #if defined(WITH_VISUAL)
     cout << "Image SNR: " << imgSNR << endl;
     #endif
 
+    std::vector<cv::Rect> bboxes;
     if (imgSNR > options.signalToNoise) {
         mser(imgCorrect, bboxes, options.delta, options.variation, options.epsilon);
     } else {
@@ -358,7 +356,7 @@ public:
         // TODO: Throw error for invalid input
         // If eps = 0: Any parts of r1 and r2 overlapping return true
         // If eps = 1: Smaller rectangle needs to be entirely within larger rectangle to match
-        float min_area = std::min(r1.area(), r2.area()) * eps; 
+        float min_area = std::min(r1.area(), r2.area()) / eps; 
 
         return (r1 & r2).area() >= min_area;
     }
@@ -427,9 +425,9 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
         return;
     }
 
-    std::vector<int> labels;
     // Third argument of partion is a predicate operator that looks for a method of the class
     // that will return true when elements are apart of the same partition
+    std::vector<int> labels;
     int nclasses = partition(rectList, labels, OverlapRects2b(eps));
 
     // labels correspond to the location of the rectangle in space 
@@ -437,22 +435,30 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     std::vector<int> rweights(nclasses, 0);
     int nlabels = (int)labels.size();
 
-    for (int i = 0; i < nlabels; i++)
-    {
-        int cls = labels[i];
-        if (rectList[i].width > rrects[cls].width)
-        {
-            rrects[cls].width = rectList[i].width;
-            rrects[cls].x = rectList[i].x;
+    bool bounds = true, intersect = false;
+    if(bounds) {
+        for (int i = 0; i < nlabels; i++) {
+            int cls = labels[i];
+            if (rectList[i].width > rrects[cls].width)
+            {
+                rrects[cls].width = rectList[i].width;
+                rrects[cls].x = rectList[i].x;
+            }
+            if (rectList[i].height > rrects[cls].height)
+            {
+                rrects[cls].height = rectList[i].height;
+                rrects[cls].y = rectList[i].y;
+            }
+            rweights[cls]++;
         }
-        if (rectList[i].height > rrects[cls].height)
-        {
-            rrects[cls].height = rectList[i].height;
-            rrects[cls].y = rectList[i].y;
-        }
-        rweights[cls]++;
     }
-
+    if(intersect) {
+        for (int i = 0; i < nlabels; i++) {
+            int cls = labels[i];
+            rrects[cls] = rrects[cls] | rectList[i];
+            rweights[cls]++;
+        }
+    }
     rectList.clear();
 
     for (int i = 0; i < nclasses; i++)
@@ -461,7 +467,6 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
             rectList.push_back(rrects[i]);
         }
     }
-
 }
 
 
@@ -470,47 +475,44 @@ void mser(cv::Mat img, std::vector<cv::Rect>& bboxes, int delta, int max_variati
     int max_area = 400000;
     
     cv::Ptr<cv::MSER> detector = cv::MSER::create(delta, min_area, max_area, max_variation); 
-	  std::vector<std::vector<cv::Point>> msers;
-	  detector->detectRegions(img, msers, bboxes);
+	std::vector<std::vector<cv::Point>> msers;
+	detector->detectRegions(img, msers, bboxes);
 
     #if defined(WITH_VISUAL)
-	  cv::Mat img_bboxes;
-	  cv::cvtColor(img, img_bboxes, cv::COLOR_GRAY2RGB);
-	  int size_more = bboxes.size();
-	  for(int i=0;i<size_more;i++){
-	  	cv::rectangle(img_bboxes, bboxes[i], cv::Scalar(0, 0, 255));
-	  }
+    // Create an image with all of the bboxes on it from MSER
+	cv::Mat img_bboxes;
+	cv::cvtColor(img, img_bboxes, cv::COLOR_GRAY2RGB);
+	for(int i=0;i<bboxes.size();i++){
+	    cv::rectangle(img_bboxes, bboxes[i], cv::Scalar(0, 0, 255));
+	}
     cv::imshow("viewer", img_bboxes);
     cv::waitKey(0);
     #endif
 
-    // Reimpliment OpenCV groupRectangles with different funtionality to merge MSER 
-    // bounding boxes
-    int minBboxes = 2;
 
-    // auto start = std::chrono::steady_clock::now();
+    #if defined(WITH_VISUAL)
+    auto start = std::chrono::steady_clock::now();
+    #endif
+
+    // merge the bounding boxes produced by MSER
+    int minBboxes = 2;
     groupRect(bboxes, minBboxes, eps);
-    // groupRectangles(bboxes, minBboxes, eps);
-    // auto end = std::chrono::steady_clock::now();
-    // std::chrono::duration<double> elapsed_seconds = end-start;
-    // std::cout << "Group Rect time: " << elapsed_seconds.count() << "s\n";    
+
+    #if defined(WITH_VISUAL)
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end-start;
+    std::cout << "Group Rect time: " << elapsed_seconds.count() << "s\n";    
+    #endif
 }
 
 
-void preprocess(const cv::Mat &src, cv::Mat &dst) {
+void preprocess(const cv::Mat &src, cv::Mat &dst, float erosion_size) {
     // Perform image pre processing
-    float erosion_size = 2;
     cv::Mat erodeElement = getStructuringElement( cv::MORPH_ERODE,
-               cv::Size( 2*erosion_size + 1, 2*erosion_size+1 ),
-               cv::Point( erosion_size, erosion_size ) );
+    cv::Size(2*erosion_size+1, 2*erosion_size+1),
+    cv::Point(erosion_size, erosion_size));
     
-    // open is useful in removing noise in the image
-    Point anchor = cv::Point(-1, -1);
-    cv::Mat kernel = getStructuringElement(cv::MORPH_ELLIPSE,
-               cv::Size(10, 10),
-               anchor);
-
-    cv::morphologyEx(src, dst, cv::MORPH_OPEN, kernel); // open is a combination of erosion and dialation
+    cv::morphologyEx(src, dst, cv::MORPH_OPEN, erodeElement); // open is a combination of erosion and dialation
 }
 
 float SNR(cv::Mat& img) {
@@ -610,7 +612,7 @@ void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nCha
 
 	    	break;
 	    }
-        // TODO: there are 0 elements that are included in the mean, this should mess with the flat fielding
+        // TODO: there are 0 elements that are included in the mean, this could mess with the flat fielding
 	    case -1: {
             cv::Mat sort;
 	    	cv::sort(img, sort, cv::SORT_EVERY_COLUMN);
