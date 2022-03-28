@@ -90,7 +90,7 @@ std::string convertInt(int number, int fill) {
  */
 void getFrame(cv::VideoCapture cap, cv::Mat& img, int& frameCounter, int numConcatenate) {
     cv::Mat frame;
-    cv::Mat frameArray[numConcatenate] = {};
+    cv::Mat *frameArray = new cv::Mat [numConcatenate];
     for(int k=0; k<numConcatenate; k++){
         cap.read(frame);
         cv::cvtColor(frame, frameArray[k], cv::COLOR_RGB2GRAY);
