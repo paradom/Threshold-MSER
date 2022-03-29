@@ -56,7 +56,7 @@ bool isInt(std::string str);
 
 std::string convertInt(int number, int fill=4);
 
-cv::Rect rescaleRect(const cv::Rect& rect, float scale=.5);
+cv::Rect rescaleRect(const cv::Rect rect, float scale=.5);
 
 void preprocess(const cv::Mat& src, cv::Mat& dst, float erosion_size);
 
@@ -76,11 +76,11 @@ void mser(cv::Mat img, std::vector<cv::Rect>& bboxes, int delta=5,
 void getFrame(cv::VideoCapture cap, cv::Mat& img, int& frameCounter, 
         int numConcatenate);
 
-void segmentImage(cv::Mat img, Options options, std::string imgDir, 
-        std::ofstream& measurePtr, std::string imgName);
+void segmentImage(cv::Mat img, cv::Mat& imgCorrect, std::vector<cv::Rect>& bboxes,
+        Options options);
 
-void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, 
-        Options options, std::string imgDir, std::ofstream& measurePtr, 
-        std::string imgName);
+void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes,
+        std::string imgDir, std::string imgName, std::ofstream& measurePtr,
+        Options options);
 
 #endif

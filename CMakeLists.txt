@@ -9,15 +9,16 @@ project(segment
 # check the compiler
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     # require at least g++ 8
+    message("Building with GNU")
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
         message(FATAL_ERROR "GCC version must be at least 8!")
     endif()
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
     # require at least clang 5
-    ## if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
-    ##     message(FATAL_ERROR "Clang version must be at least 5!")
-    ## endif()
     message("Building with Clang")
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
+        message(FATAL_ERROR "Clang version must be at least 8!")
+    endif()
     find_package(LLVM)
     add_definitions(${LLVM_DEFINITONS})
     include_directories(${LLVM_INCLUDE_DIRS})
@@ -39,10 +40,6 @@ add_executable(segment
 target_link_libraries(segment ${OpenCV_LIBS})
 target_compile_features(segment PRIVATE cxx_std_17)
 target_link_libraries(segment stdc++fs)
-
-# if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-#     target_link_libraries(segment stdc++fs)
-# endif()
 
 # add the binary tree to the search path for include files
 target_include_directories(segment PUBLIC "${PROJECT_BINARY_DIR}")

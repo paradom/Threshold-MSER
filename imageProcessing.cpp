@@ -35,7 +35,6 @@
 #include <fstream> // write output csv files
 #include <iomanip>  // std::setw
 #include <filesystem>
-// #include <tuple>
 
 #include <opencv2/videoio.hpp> // used for the video preprocessing
 #include <opencv2/core.hpp>
@@ -46,14 +45,11 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 
-#include <chrono>                                                               
-using namespace std::chrono;
+#include <chrono> // timer
 
-using namespace cv;
-using namespace std;
 namespace fs = std::filesystem;
 
-bool containExt(const std::string s, string arr[], int len) {
+bool containExt(const std::string s, std::string arr[], int len) {
     for (int i=0; i<len; i++) {
         if(s == arr[i]) {
             return true;
@@ -106,11 +102,11 @@ void getFrame(cv::VideoCapture cap, cv::Mat& img, int& frameCounter, int numConc
  */
 void chopThreshold(const cv::Mat &src, cv::Mat &dst, int thresh){
     cv::Mat imgOtsu;
-    cv::threshold(src, imgOtsu, thresh, 255, THRESH_TOZERO_INV);
+    cv::threshold(src, imgOtsu, thresh, 255, cv::THRESH_TOZERO_INV);
 
     cv::Mat mask;
-    cv::compare(src,imgOtsu,mask,CMP_EQ);
-    cv::Mat imgThresh(src.size(), CV_8UC1, Scalar(255));
+    cv::compare(src, imgOtsu, mask, cv::CMP_EQ);
+    cv::Mat imgThresh(src.size(), CV_8UC1, cv::Scalar(255));
     src.copyTo(dst, mask);
 }
 
@@ -149,17 +145,26 @@ void drawHistogram(cv::Mat& hist) {
     cv::imshow("calcHist", histImage);
 }
 
-void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstream& measurePtr, std::string imgName) {
+/*
+ * Function segmentImage
+ *
+ * Perform preprocessing in the img and use mser to generate bounding boxes.
+ *
+ * img: grayscale image to segment
+ * imgCorrect: img pointer to store the corrected image
+ * bboxes: vector to store the bboxes produced by mser
+ * options: command line options
+ *
+ */
+void segmentImage(cv::Mat img, cv::Mat& imgCorrect, std::vector<cv::Rect>& bboxes, Options options) {
     #if defined(WITH_VISUAL)
-    cv::imshow("viewer", img);
+    cv::imshow("viewer", img); // display unmodified image
     cv::waitKey(0); 
 
-    // Start timer
-    auto start = std::chrono::steady_clock::now();
+    auto start = std::chrono::steady_clock::now(); // Start timer
     #endif
     
     // Flatfield the image to remove the vertical lines
-    cv::Mat imgCorrect;
     flatField(img, imgCorrect, options.outlierPercent);
 
     #if defined(WITH_VISUAL)
@@ -168,25 +173,19 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
     std::cout << "Flatfield time: " << elapsed_seconds.count() << "s\n";    
     #endif
 
-    // cv::Mat imgProcess;
-    // preprocess(imgCorrect, imgProcess, 1);
-
     // If the SNR is less than options.signalToNoise then the image will have many false segments
     float imgSNR = SNR(imgCorrect);
     #if defined(WITH_VISUAL)
-    cout << "Image SNR: " << imgSNR << endl;
+    std::cout << "Image SNR: " << imgSNR << std::endl;
     #endif
-
-    std::vector<cv::Rect> bboxes;
     if (imgSNR > options.signalToNoise) {
         mser(imgCorrect, bboxes, options.delta, options.variation, options.epsilon);
     } else {
         // Create a mask that includes all of the regions of the image with
         // the darkest pixels which MSER method can be performed on.
-
         int thresh = 140; 
         cv::Mat imgThresh;
-        cv::threshold(imgCorrect, imgThresh, thresh, 255, THRESH_BINARY);
+        cv::threshold(imgCorrect, imgThresh, thresh, 255, cv::THRESH_BINARY);
 
 	    cv::Mat mask = cv::Mat::zeros(img.size(), img.type());
 	    cv::Mat imgCorrectMask(img.size(), img.type(), cv::Scalar(255));
@@ -196,14 +195,13 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
         bool mesh = false;
         if (contour) {
             std::vector<std::vector <cv::Point> > contours; // Vector for storing contour
-            std::vector<Vec4i> hierarchy;
+            std::vector<cv::Vec4i> hierarchy;
             cv::findContours(imgThresh, contours, hierarchy, cv::RETR_LIST, cv::CHAIN_APPROX_TC89_L1);
             cv::Mat imgCorrectBbox;
             cv::cvtColor(imgCorrect, imgCorrectBbox, cv::COLOR_GRAY2RGB);
 
-            cv::Rect boundRect;
-
             // create mask based on darkest regions
+            cv::Rect boundRect;
             cv::Rect maskRect(0, 0, mask.cols, mask.rows); // use maskRect to make sure box doesn't go off the edge
             for(int i=0; i<contours.size(); i++){
                 boundRect = cv::boundingRect(contours[i]);
@@ -217,7 +215,7 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
             }
         }
         if (mesh) {
-            Point anchor = cv::Point(-1, -1); // default anchor value
+            cv::Point anchor = cv::Point(-1, -1); // default anchor value
             cv::Mat openKernel = getStructuringElement( cv::MORPH_ELLIPSE,
                         cv::Size(4, 4),
                         anchor);
@@ -236,11 +234,23 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
         mser(imgCorrectMask, bboxes, options.delta, options.variation, options.epsilon);
     }
 
-    saveCrops(img, imgCorrect, bboxes, options, imgDir, measurePtr, imgName);
 }
 
 
-void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Options options, std::string imgDir, std::ofstream& measurePtr, std::string imgName) {
+/*
+ * Function: saveCrops
+ *
+ * Uses the bboxes generated by the segmentation algorithm to save images and their metadata.
+ * 
+ * img: original frame
+ * imgCorrect: flatFielded image frame
+ * bboxes: bounding boxes to crop out of the images
+ * imgDir: output directory for image crops
+ * measurePtr: measurement file pointer that is used to store segment metadata.
+ * options: command line options to filter out the small and large bounding boxes.
+ *
+ */
+void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, std::string imgDir, std::string imgName, std::ofstream& measurePtr, Options options) {
 	// Create crop directories
 	std::string correctCropDir = imgDir + "/corrected_crop";
     fs::create_directory(correctCropDir);
@@ -303,7 +313,7 @@ void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Op
             // TODO: store additional fields (squiggly vs straight), gray level, etc
             measurePtr << correctImgFile << "," << area << "," << major << "," << minor << "," 
                 << perimeter << "," << x << "," << y << "," << br.x << "," << br.y
-                << "," << height << endl; 
+                << "," << height << std::endl; 
         }
 
         // Re-scale the crop of the image after getting the measurement data written to a file
@@ -311,11 +321,11 @@ void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Op
 
         // Create a new crop using the intersection of rectangle objects and the image
         cv::Rect imgRect(0, 0, imgCorrect.cols, imgCorrect.rows); // use imgRect to make sure box doesn't go off the edge
-        cv::Mat imgCropCorrect = Mat(imgCorrect, scaledBbox & imgRect); // TODO: check the speed of this operation
+        cv::Mat imgCropCorrect = cv::Mat(imgCorrect, scaledBbox & imgRect); // TODO: check the speed of this operation
         cv::imwrite(correctImgFile, imgCropCorrect);
 
         // Crop the original image
-        cv::Mat imgCropRaw = Mat(img, scaledBbox & imgRect);
+        cv::Mat imgCropRaw = cv::Mat(img, scaledBbox & imgRect);
         cv::imwrite(rawImgFile, imgCropRaw);
 
 	    // Draw the cropped frames on the image to be saved
@@ -331,8 +341,17 @@ void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Op
 	cv::imwrite(bboxFrame, imgBboxes);
 }
 
-// Rescale the crop of the image after getting the measurement data written to a file
-cv::Rect rescaleRect(const cv::Rect &rect, float scale)
+/*
+ * Function: rescaleRect
+ *
+ * Rescale a rectangle by the scale factor scale.
+ * This resizes a rectangle equally on all sides.
+ *
+ * rect: rectangle to scale
+ * scale: scalling factor to enlarge or reduce the size of the rect.
+ *
+ */
+cv::Rect rescaleRect(const cv::Rect rect, float scale)
 {
     float scaleWidth = rect.width * scale;
     float scaleHeight = rect.height * scale;
@@ -343,27 +362,8 @@ cv::Rect rescaleRect(const cv::Rect &rect, float scale)
 } 
 
 /*
- * This class can be used to pass into the partition function in order to create 
- * a grouping of the rectangles accross the image
- *
- */
-class OverlapRects
-{
-public:
-    OverlapRects(double _eps) : eps(_eps) {}
-    inline bool operator()(const cv::Rect& r1, const cv::Rect& r2) const
-    {
-        // TODO: Throw error for invalid input
-        // If eps = 0: Any parts of r1 and r2 overlapping return true
-        // If eps = 1: Smaller rectangle needs to be entirely within larger rectangle to match
-        float min_area = std::min(r1.area(), r2.area()) / eps; 
-
-        return (r1 & r2).area() >= min_area;
-    }
-    double eps;
-};
-
-/*
+ * Class: OverlapRects
+ * 
  * This class can be used to pass into the partition function in order to create
  * a grouping of the rectangles accross the image
  *
@@ -371,34 +371,11 @@ public:
  * If eps >= 1, then rectangles close to each other will be grouped
  *
  */
-class OverlapRects2
+class OverlapRects
 {
 public:
-    OverlapRects2(double _eps) : eps(_eps) {}
-    inline bool operator()(const Rect& r1, const Rect& r2) const
-    {
-        double deltax = eps * (r1.width + r2.width) * 0.5;
-        double deltay = eps * (r1.height + r2.height) * 0.5;
-
-        double centerx1 = r1.x + r1.width * 0.5;
-        double centerx2 = r2.x + r2.width * 0.5;
-        double centery1 = r1.y - r1.height * 0.5;
-        double centery2 = r2.y - r2.height * 0.5;
-
-        return std::abs(centerx1 - centerx2) <= deltax &&
-            std::abs(centery1 - centery2) <= deltay;
-
-        return std::abs((r1.x - r2.x) + (r1.width - r2.width) * 0.5) <= deltax &&
-            std::abs((r1.y - r2.y) + (r1.height - r2.height) * 0.5) <= deltay;
-    }
-    double eps;
-};
-
-class OverlapRects2b
-{
-public:
-    OverlapRects2b(double _eps) : eps(_eps) {}
-    inline bool operator()(const Rect& r1, const Rect& r2) const
+    OverlapRects(double _eps) : eps(_eps) {}
+    inline bool operator()(const cv::Rect& r1, const cv::Rect& r2) const
     {
         double deltax = eps * (r1.width + r2.width) * 0.5;
         double deltay = eps * (r1.height + r2.height) * 0.5;
@@ -428,7 +405,7 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     // Third argument of partion is a predicate operator that looks for a method of the class
     // that will return true when elements are apart of the same partition
     std::vector<int> labels;
-    int nclasses = partition(rectList, labels, OverlapRects2b(eps));
+    int nclasses = partition(rectList, labels, OverlapRects(eps));
 
     // labels correspond to the location of the rectangle in space 
     std::vector<cv::Rect> rrects(nclasses);
@@ -543,7 +520,6 @@ void flatField(cv::Mat& src, cv::Mat& dst, float outlierPercent) {
 }
 
 
-// FIXME: Need to rewrite function to clean up. Extracted from old segmentation tool.
 void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nChannels) {
 	// trimMean calculates the trimmed mean of the values in img.
 	// If img is a vector, tMean is the mean of img, excluding the highest and lowest k data values,
@@ -561,7 +537,7 @@ void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nCha
 	    	int k = round(img.rows*outlierPercent/2); // Calculate the number of outlier elements
             
             // Create a mask with 0's for the top and bottom k elements
-	    	cv::Mat maskCol = Mat::ones(height, 1, CV_8UC1);
+	    	cv::Mat maskCol = cv::Mat::ones(height, 1, CV_8UC1);
             for (int cnt1=0; cnt1<k; cnt1++) {
 	    	    maskCol.at<int8_t>(cnt1,0) = 0;
             }
@@ -583,35 +559,6 @@ void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nCha
 
 	    	break;
 	    }
-	    case -2: { // Old 1 channel tMean
-            // Sort the img matrix
-	    	cv::sort(img, tMean, cv::SORT_EVERY_COLUMN);
-
-            // Calculate the number of outlier elements
-	    	int height = img.rows, width = img.cols;
-	    	int k = round(height*outlierPercent/2);
-
-            // Create a mask with 0's for the top and bottom k elements
-	    	cv::Mat maskCol = Mat::ones(height, 1, CV_8UC1);
-            for (int cnt1=0; cnt1<k; cnt1++) {
-	    	    maskCol.at<int8_t>(cnt1,0) = 0;
-            }
-            for (int cnt1=(height-k); cnt1<height; cnt1++) {
-	    	    maskCol.at<int8_t>(cnt1,0) = 0;
-            }
-
-
-	    	cv::Mat tempCol;
-	    	cv::Scalar meanCol;
-	    	for(int cnt2=0;cnt2<width;cnt2++){
-	    		tempCol = tMean.col(cnt2).mul(maskCol);
-                
-	    		double mean = cv::mean(tempCol)[0]; // Get the mean of the first channel
-	    		tMean.col(cnt2) = Mat::ones(height, 1, tMean.type())*mean; // make a column that has the average value of the column
-	    	}
-
-	    	break;
-	    }
         // TODO: there are 0 elements that are included in the mean, this could mess with the flat fielding
 	    case -1: {
             cv::Mat sort;
@@ -623,19 +570,18 @@ void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nCha
 
             cv::Mat imgMask;
             sort(cv::Rect(0,k,img.cols,img.rows-(2*k))).copyTo(imgMask);
-            cout << imgMask.size() << endl;
+            std::cout << imgMask.size() << std::endl;
 
             // get the column-wise average of the image.
             cv::Mat average;
             cv::reduce(imgMask, average, 0, cv::REDUCE_AVG);
-            cout << average.size() << endl;
+            std::cout << average.size() << std::endl;
 
             // Create the trimmed mean matrix 
             cv::repeat(average,img.rows,1,tMean);
 
 	    	break;
 	    }
-    
         // NOTE: 3 channel version of this function is still under construction
 	    case 3: {
 	    	tMean.create(img.rows,img.cols, CV_8UC3);
