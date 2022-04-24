@@ -1,6 +1,4 @@
-/***********************************************
- *
- *  main.cpp
+/** @file main.cpp
  *
  *  Copyright © 2022 Oregon State University
  *
@@ -28,7 +26,7 @@
  *  of the binary or source code to third parties for use with a commercial 
  *  product sold or licensed by, or on behalf of, User.
  *
-***********************************************/ 
+ */ 
 
 #include <iostream>
 #include <fstream> // write output csv files
