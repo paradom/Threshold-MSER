@@ -1,6 +1,4 @@
-/***********************************************
- *
- *  imageProcessing.cpp
+/** @file imageProcessing.cpp
  *
  *  Copyright © 2022 Oregon State University
  *
@@ -28,14 +26,13 @@
  *  of the binary or source code to third parties for use with a commercial 
  *  product sold or licensed by, or on behalf of, User.
  *
-***********************************************/ 
+ */ 
 
 #include "imageProcessing.hpp"
 #include <iostream>
 #include <fstream> // write output csv files
 #include <iomanip>  // std::setw
 #include <filesystem>
-#include <tuple>
 
 #include <opencv2/videoio.hpp> // used for the video preprocessing
 #include <opencv2/core.hpp>
@@ -46,11 +43,11 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
 
-using namespace cv;
-using namespace std;
+#include <chrono> // timer
+
 namespace fs = std::filesystem;
 
-bool containExt(const std::string s, string arr[], int len) {
+bool containExt(const std::string s, std::string arr[], int len) {
     for (int i=0; i<len; i++) {
         if(s == arr[i]) {
             return true;
@@ -67,78 +64,99 @@ bool isInt(std::string str) {
     return true;
 }
 
-/*
- * Function: convertInt
- *
- * Adds "fill" padding 0's to an input "number". Fill has a default value of 4.
- *
- * return: std::string object with concatenated 0's
- */
 std::string convertInt(int number, int fill) {
 	std::stringstream ss; //create a stringstream
 	ss << std::setw(fill) << std::setfill('0') << number; // add number to the stream
+
 	return ss.str(); //return a string with the contents of the stream
 }
 
-/*
- * Combines multiple frames into a single frame
- *
- *
- */
-void getFrame(cv::VideoCapture cap, cv::Mat& img, int& frameCounter, int numConcatenate) {
+void getFrame(cv::VideoCapture cap, cv::Mat& img, int n, int& frameCounter) {
     cv::Mat frame;
-    cv::Mat frameArray[numConcatenate] = {};
-    for(int k=0; k<numConcatenate; k++){
+    cv::Mat *frameArray = new cv::Mat[n];
+    for(int k=0; k<n; k++){
         cap.read(frame);
         cv::cvtColor(frame, frameArray[k], cv::COLOR_RGB2GRAY);
     }
-    cv::vconcat(frameArray, numConcatenate, img);
-    frameCounter += numConcatenate - 1;
+    cv::vconcat(frameArray, n, img);
+    frameCounter += n - 1; // TODO: see if I can remove the frameCounter
 }
 
-/*
- * dst = src
- *
- * Anything above thresh is set to 255 (white)
- */
-void chopThreshold(const cv::Mat &src, cv::Mat &dst, int thresh){
+void chopThreshold(const cv::Mat& src, cv::Mat& dst, int thresh){
     cv::Mat imgOtsu;
-    cv::threshold(src, imgOtsu, thresh, 255, THRESH_TOZERO_INV);
+    cv::threshold(src, imgOtsu, thresh, 255, cv::THRESH_TOZERO_INV);
 
     cv::Mat mask;
-    cv::compare(src,imgOtsu,mask,CMP_EQ);
-    cv::Mat imgThresh(src.size(), CV_8UC1, Scalar(255));
+    cv::compare(src, imgOtsu, mask, cv::CMP_EQ);
+    cv::Mat imgThresh(src.size(), CV_8UC1, cv::Scalar(255));
     src.copyTo(dst, mask);
 }
 
-void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstream& measurePtr, std::string imgName) {
-    cv::Mat imgCorrect;
-    flatField(img, imgCorrect, .5);
+void getHist(const cv::Mat& img, cv::Mat& hist) {
+    int histSize = 256;
+    float range[] = {0, 256};
+    const float *histRange = {range};
 
+    bool uniform = true;
+    bool accumulate = false;
 
-    std::vector<cv::Rect> bboxes;
+    cv::calcHist(&img, 1, 0, cv::Mat(), hist, 1, &histSize,
+                 &histRange, uniform, accumulate);
+}
 
-    #if defined(VISUAL_MODE)
-    cv::imshow("viewer", img);
+void drawHistogram(cv::Mat& hist) {
+    int histSize = 256;
+    int hist_w = 512;
+    int hist_h = 400;
+    int bin_w = cvRound((double)hist_w / histSize);
+
+    cv::Mat histImage(hist_h, hist_w, CV_8UC3, cv::Scalar(0, 0, 0));
+
+    cv::normalize(hist, hist, 0, histImage.rows, cv::NORM_MINMAX, -1,
+                  cv::Mat());
+
+    for( int i = 1; i < histSize; i++ ) { 
+        cv::line(
+            histImage,
+            cv::Point(bin_w * (i-1), hist_h - cvRound(hist.at<float>(i-1))),
+            cv::Point(bin_w * (i), hist_h - cvRound(hist.at<float>(i))),
+            cv::Scalar(255, 0, 0), 2, 8, 0);
+    }
+    
+    cv::namedWindow("calcHist", cv::WINDOW_AUTOSIZE);
+    cv::imshow("calcHist", histImage);
+}
+
+void segmentImage(const cv::Mat& img, cv::Mat& imgCorrect, std::vector<cv::Rect>& bboxes, Options options) {
+    #if defined(WITH_VISUAL)
+    cv::imshow("viewer", img); // display unmodified image
     cv::waitKey(0); 
 
-    cv::imshow("viewer", imgCorrect);
-    cv::waitKey(0); 
+    auto start = std::chrono::steady_clock::now(); // Start timer
+    #endif
+    
+    // Flatfield the image to remove the vertical lines
+    flatField(img, imgCorrect, options.outlierPercent);
+
+    #if defined(WITH_VISUAL)
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end-start;
+    std::cout << "Flatfield time: " << elapsed_seconds.count() << "s\n";    
     #endif
 
-    cv::Mat imgProcess;
-    preprocess(imgCorrect, imgProcess);
-
-    // If the SNR is less than 55 then the image will have many false segments
-    float imgSNR = SNR(img);
+    // If the SNR is less than options.signalToNoise then the image will have many false segments
+    float imgSNR = SNR(imgCorrect);
+    #if defined(WITH_VISUAL)
+    std::cout << "Image SNR: " << imgSNR << std::endl;
+    #endif
     if (imgSNR > options.signalToNoise) {
-        mser(imgProcess, bboxes, options.delta, options.variation, options.epsilon);
+        mser(imgCorrect, bboxes, options.delta, options.variation, options.epsilon);
     } else {
         // Create a mask that includes all of the regions of the image with
         // the darkest pixels which MSER method can be performed on.
-        int thresh = 160; // Larger thresh means more segments
+        int thresh = 140; 
         cv::Mat imgThresh;
-        cv::threshold(imgProcess, imgThresh, thresh, 255, THRESH_BINARY);
+        cv::threshold(imgCorrect, imgThresh, thresh, 255, cv::THRESH_BINARY);
 
 	    cv::Mat mask = cv::Mat::zeros(img.size(), img.type());
 	    cv::Mat imgCorrectMask(img.size(), img.type(), cv::Scalar(255));
@@ -147,28 +165,27 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
         bool mesh = false;
         if (contour) {
             std::vector<std::vector <cv::Point> > contours; // Vector for storing contour
-            std::vector<Vec4i> hierarchy;
+            std::vector<cv::Vec4i> hierarchy;
             cv::findContours(imgThresh, contours, hierarchy, cv::RETR_LIST, cv::CHAIN_APPROX_TC89_L1);
             cv::Mat imgCorrectBbox;
-                cv::cvtColor(imgCorrect, imgCorrectBbox, cv::COLOR_GRAY2RGB);
-
-            std::vector<cv::Rect> boundRect(contours.size());
+            cv::cvtColor(imgCorrect, imgCorrectBbox, cv::COLOR_GRAY2RGB);
 
             // create mask based on darkest regions
+            cv::Rect boundRect;
             cv::Rect maskRect(0, 0, mask.cols, mask.rows); // use maskRect to make sure box doesn't go off the edge
-            for(int i=0; i<boundRect.size(); i++){
-                boundRect[i] = cv::boundingRect(contours[i]);
-                if (boundRect[i].area() > options.maximum)
+            for(int i=0; i<contours.size(); i++){
+                boundRect = cv::boundingRect(contours[i]);
+                if (boundRect.area() > options.maximum)
                     continue;
 
                 float scaleFactor = 1.2;
-                cv::Rect largeRect = rescaleRect(boundRect[i], scaleFactor);
-                cv::Mat roi = mask(largeRect & maskRect);
+                cv::Rect largeRect = rescaleRect(boundRect, scaleFactor);
+                cv::Mat roi = mask(largeRect & maskRect); // FIXME: remove & - really slow
                 roi.setTo(255);
             }
         }
         if (mesh) {
-            Point anchor = cv::Point(-1, -1); // default anchor value
+            cv::Point anchor = cv::Point(-1, -1); // default anchor value
             cv::Mat openKernel = getStructuringElement( cv::MORPH_ELLIPSE,
                         cv::Size(4, 4),
                         anchor);
@@ -179,19 +196,16 @@ void segmentImage(cv::Mat img, Options options, std::string imgDir, std::ofstrea
 
         imgCorrect.copyTo(imgCorrectMask, mask);
 
-        #if defined(VISUAL_MODE)
+        #if defined(WITH_VISUAL)
         cv::imshow("viewer", imgCorrectMask);
         cv::waitKey(0);
         #endif
 
         mser(imgCorrectMask, bboxes, options.delta, options.variation, options.epsilon);
     }
-
-    saveCrops(img, imgCorrect, bboxes, options, imgDir, measurePtr, imgName);
 }
 
-
-void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Options options, std::string imgDir, std::ofstream& measurePtr, std::string imgName) {
+void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Rect>& bboxes, std::string imgDir, std::string imgName, std::ofstream& measurePtr, Options options) {
 	// Create crop directories
 	std::string correctCropDir = imgDir + "/corrected_crop";
     fs::create_directory(correctCropDir);
@@ -227,7 +241,7 @@ void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Op
         float height = bboxes[k].height;
         float width = bboxes[k].width;
         
-        // Determine if box is irregularly shapped
+        // Determine if box is irregularly shapped (Abnormally long and thin)
         int hwRatio = 10;
         if ( width < 30 && height > hwRatio * width )
             continue;
@@ -254,33 +268,35 @@ void saveCrops(cv::Mat img, cv::Mat imgCorrect, std::vector<cv::Rect> bboxes, Op
             // TODO: store additional fields (squiggly vs straight), gray level, etc
             measurePtr << correctImgFile << "," << area << "," << major << "," << minor << "," 
                 << perimeter << "," << x << "," << y << "," << br.x << "," << br.y
-                << "," << height << endl; 
+                << "," << height << std::endl; 
         }
 
         // Re-scale the crop of the image after getting the measurement data written to a file
-        cv::Rect scaledBbox = rescaleRect(bboxes[k], .5);
+        cv::Rect scaledBbox = rescaleRect(bboxes[k], 1.5);
 
         // Create a new crop using the intersection of rectangle objects and the image
         cv::Rect imgRect(0, 0, imgCorrect.cols, imgCorrect.rows); // use imgRect to make sure box doesn't go off the edge
-        cv::Mat imgCropCorrect = Mat(imgCorrect, scaledBbox & imgRect);
+        cv::Mat imgCropCorrect = cv::Mat(imgCorrect, scaledBbox & imgRect); // TODO: check the speed of this operation
         cv::imwrite(correctImgFile, imgCropCorrect);
 
         // Crop the original image
-        cv::Mat imgCropRaw = Mat(img, scaledBbox & imgRect);
+        cv::Mat imgCropRaw = cv::Mat(img, scaledBbox & imgRect);
         cv::imwrite(rawImgFile, imgCropRaw);
 
 	    // Draw the cropped frames on the image to be saved
 	    cv::rectangle(imgBboxes, bboxes[k], cv::Scalar(0, 0, 255));
     }
 
-    #if defined(VISUAL_MODE)
+    #if defined(WITH_VISUAL)
     cv::imshow("viewer", imgBboxes);
     cv::waitKey(0);
     #endif
+
+	std::string bboxFrame = frameDir + "/" + imgName + "_bboxes.tif";
+	cv::imwrite(bboxFrame, imgBboxes);
 }
 
-// Rescale the crop of the image after getting the measurement data written to a file
-cv::Rect rescaleRect(const cv::Rect &rect, float scale)
+cv::Rect rescaleRect(const cv::Rect& rect, float scale)
 {
     float scaleWidth = rect.width * scale;
     float scaleHeight = rect.height * scale;
@@ -290,36 +306,6 @@ cv::Rect rescaleRect(const cv::Rect &rect, float scale)
     return scaledRect;
 } 
 
-/*
- * This class can be used to pass into the partition function in order to create 
- * a grouping of the rectangles accross the image
- *
- */
-class OverlapRects
-{
-public:
-    OverlapRects(double _eps) : eps(_eps) {}
-    inline bool operator()(const cv::Rect& r1, const cv::Rect& r2) const
-    {
-        // TODO: Throw error for invalid input
-        // If eps = 0: Any parts of r1 and r2 overlapping return true
-        // If eps = 1: Smaller rectangle needs to be entirely within larger rectangle to match
-        float min_area = std::min(r1.area(), r2.area()) * eps; 
-
-        return (r1 & r2).area() >= min_area;
-    }
-    double eps;
-};
-
-/*
- * Function: groupRect
- *
- * Reimplements the OpenCV groupRectangles function to group rectangles by our own
- * mechanism. 
- * This function allows control over how much of the rectangles need to overlap as
- * well as how the grouped rectangles are used to produce the final ROI (TODO).
- *
- */
 void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
 { 
     if( rectList.empty() )
@@ -327,9 +313,9 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
         return;
     }
 
-    std::vector<int> labels;
     // Third argument of partion is a predicate operator that looks for a method of the class
     // that will return true when elements are apart of the same partition
+    std::vector<int> labels;
     int nclasses = partition(rectList, labels, OverlapRects(eps));
 
     // labels correspond to the location of the rectangle in space 
@@ -337,40 +323,30 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     std::vector<int> rweights(nclasses, 0);
     int nlabels = (int)labels.size();
 
-    bool method1 = true;
-    bool method2 = false;
-
-    if(method1) {
-        int uniqueLabels = 0;
-        for (int i = 0; i < nlabels; i++)
-        {
+    bool bounds = true, intersect = false;
+    if(bounds) {
+        for (int i = 0; i < nlabels; i++) {
             int cls = labels[i];
             if (rectList[i].width > rrects[cls].width)
             {
                 rrects[cls].width = rectList[i].width;
                 rrects[cls].x = rectList[i].x;
-                rrects[cls].y = rectList[i].y;
             }
             if (rectList[i].height > rrects[cls].height)
             {
                 rrects[cls].height = rectList[i].height;
-                rrects[cls].x = rectList[i].x;
                 rrects[cls].y = rectList[i].y;
             }
-            if (rweights[cls] == 0)
-                uniqueLabels++;
             rweights[cls]++;
         }
     }
-    if(method2){
-        for (int i = 0; i < nlabels; i++)
-        {
+    if(intersect) {
+        for (int i = 0; i < nlabels; i++) {
             int cls = labels[i];
             rrects[cls] = rrects[cls] | rectList[i];
             rweights[cls]++;
         }
     }
-
     rectList.clear();
 
     for (int i = 0; i < nclasses; i++)
@@ -379,11 +355,9 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
             rectList.push_back(rrects[i]);
         }
     }
-
 }
 
-
-void mser(cv::Mat img, std::vector<cv::Rect>& bboxes, int delta, int max_variation, float eps) {
+void mser(const cv::Mat& img, std::vector<cv::Rect>& bboxes, int delta, int max_variation, float eps) {
     int min_area = 50;
     int max_area = 400000;
     
@@ -391,43 +365,43 @@ void mser(cv::Mat img, std::vector<cv::Rect>& bboxes, int delta, int max_variati
 	std::vector<std::vector<cv::Point>> msers;
 	detector->detectRegions(img, msers, bboxes);
 
-    #if defined(VISUAL_MODE)
+    #if defined(WITH_VISUAL)
+    // Create an image with all of the bboxes on it from MSER
 	cv::Mat img_bboxes;
 	cv::cvtColor(img, img_bboxes, cv::COLOR_GRAY2RGB);
-	int size_more = bboxes.size();
-	for(int i=0;i<size_more;i++){
-		cv::rectangle(img_bboxes, bboxes[i], cv::Scalar(0, 0, 255));
+	for(int i=0;i<bboxes.size();i++){
+	    cv::rectangle(img_bboxes, bboxes[i], cv::Scalar(0, 0, 255));
 	}
     cv::imshow("viewer", img_bboxes);
     cv::waitKey(0);
     #endif
 
-    // Reimpliment OpenCV groupRectangles with different funtionality to merge MSER 
-    // bounding boxes
+
+    #if defined(WITH_VISUAL)
+    auto start = std::chrono::steady_clock::now();
+    #endif
+
+    // merge the bounding boxes produced by MSER
     int minBboxes = 2;
-
     groupRect(bboxes, minBboxes, eps);
-    // groupRectangles(bboxes, minBboxes, eps);
+
+    #if defined(WITH_VISUAL)
+    auto end = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_seconds = end-start;
+    std::cout << "Group Rect time: " << elapsed_seconds.count() << "s\n";    
+    #endif
 }
 
-
-void preprocess(const cv::Mat &src, cv::Mat &dst) {
+void preprocess(const cv::Mat& src, cv::Mat& dst, float erosion_size) {
     // Perform image pre processing
-    float erosion_size = 2;
     cv::Mat erodeElement = getStructuringElement( cv::MORPH_ERODE,
-               cv::Size( 2*erosion_size + 1, 2*erosion_size+1 ),
-               cv::Point( erosion_size, erosion_size ) );
+    cv::Size(2*erosion_size+1, 2*erosion_size+1),
+    cv::Point(erosion_size, erosion_size));
     
-    // open is useful in removing noise in the image
-    Point anchor = cv::Point(-1, -1);
-    cv::Mat kernel = getStructuringElement(cv::MORPH_ELLIPSE,
-               cv::Size(7, 7),
-               anchor);
-
-    cv::morphologyEx(src, dst, cv::MORPH_OPEN, kernel); // open is a combination of erosion and dialation
+    cv::morphologyEx(src, dst, cv::MORPH_OPEN, erodeElement); // open is a combination of erosion and dialation
 }
 
-float SNR(cv::Mat& img) {
+float SNR(const cv::Mat& img) {
     // perform histogram equalization
     cv::Mat imgHeq;
     cv::equalizeHist(img, imgHeq);
@@ -441,12 +415,12 @@ float SNR(cv::Mat& img) {
     return SNR;
 }
 
-void flatField(cv::Mat& src, cv::Mat& dst, float outlierPercent) {
+void flatField(const cv::Mat& src, cv::Mat& dst, float percent) {
     cv::Mat imgBlack = cv::Mat::zeros(src.size(), src.type());
     cv::Mat imgCalib = cv::Mat::zeros(src.size(), src.type());
     
     // Get the calibration image
-    trimMean(src, imgCalib, outlierPercent, 1); // 1 use only one channel
+    trimMean(src, imgCalib, percent);
     
     cv::Mat imgCorrect(src.size(), src.type()); // creates mat of the correct size and type
     cv::addWeighted(src, 1, imgBlack, -1, 0, src); // subtracts an all black array
@@ -454,125 +428,32 @@ void flatField(cv::Mat& src, cv::Mat& dst, float outlierPercent) {
     cv::divide(src, imgCalib, dst, 255); // performs the flat fielding by dividing the arrays
 }
 
-void trimMean(const cv::Mat& img, cv::Mat& tMean, float outlierPercent, int nChannels) {
-	// trimMean calculates the trimmed mean of the values in img.
-	// If img is a vector, tMean is the mean of img, excluding the highest and lowest k data values,
-	// where k=n*(outlierPercent/100)/2 and where n is the number of values in img. For a matrix input,
-	// tMean is a row vector containing the trimmed mean of each column of img. For n-D arrays,
-	// trimMean operates along the first non-singleton dimension. outlierPercent is a scalar between 0 and 100d
+void trimMean(const cv::Mat& img, cv::Mat& tMean, float percent) {
+    cv::Mat sort;
+	cv::sort(img, sort, cv::SORT_EVERY_COLUMN);
+	int height = img.rows, width = img.cols;
 
-	switch (nChannels){
-	    case 1: {
-	    	tMean.create(img.rows, img.cols, CV_8UC1);
+    // Get a subset of the matrix entries so that they can be averaged
+	int k = round(img.rows*percent/2); // Calculate the number of outlier elements
+    
+    // Create a mask with 0's for the top and bottom k elements
+	cv::Mat maskCol = cv::Mat::ones(height, 1, CV_8UC1);
+    for (int cnt1=0; cnt1<k; cnt1++) {
+	    maskCol.at<int8_t>(cnt1,0) = 0;
+    }
+    for (int cnt1=(height-k); cnt1<height; cnt1++) {
+	    maskCol.at<int8_t>(cnt1,0) = 0;
+    }
+    cv::Mat mask;
+    cv::repeat(maskCol,1,width,mask);
 
-	    	cv::Mat bChannel(img.rows, img.cols, CV_8UC1); // black color channel
-	    	cv::Mat out[] = {bChannel};
-	    	cv::Mat tempCol;
-	    	cv::Mat maskCol;
+    cv::Mat imgMask;
+    sort.copyTo(imgMask,mask);
 
-	    	cv::Scalar meanCol;
-	    	double meanCol1;
-	    	int cnt1, cnt2; 
-	    	int k, n;
-	    	int height = img.rows, width = img.cols;
-	    	int from_to[] = {0,0};
+    // get the column-wise average of the image.
+    cv::Mat average;
+    cv::reduce(imgMask, average, 0, cv::REDUCE_AVG);
 
-            // mask removes the top and bottom n elements
-	    	n = height;
-	    	k = round(n*(outlierPercent/100)/2);
-	    	maskCol.create(n, 1, CV_8UC1);
-
-	    	for(cnt1=0;cnt1<height;cnt1++){
-	    		if ((cnt1>=0 && cnt1<=k) || ((cnt1>=(height-k) && cnt1<=height)) ) {
-	    			maskCol.at<int8_t>(cnt1,0) = 0;
-	    		} else {
-	    			maskCol.at<int8_t>(cnt1,0) = 1;
-	    		}
-	    	}
-
-	    	// Split the color channels
-	    	mixChannels(&img, 1, out, 1, from_to, 1); 
-
-	    	cv::sort(bChannel, bChannel, cv::SORT_EVERY_COLUMN);
-	    	for(cnt2=0;cnt2<width;cnt2++){
-	    		tempCol = bChannel.col(cnt2);
-	    		tempCol = tempCol.mul(maskCol);
-
-	    		meanCol = mean(tempCol);
-	    		meanCol1 = meanCol[0];
-	    		bChannel.col(cnt2) = cv::Mat::ones(height, 1, bChannel.type())*meanCol1; // make a column that has the average value of the column
-	    	}
-	    	merge(out, 1, tMean);
-
-	    	break;
-	    }
-	    case 3: {
-	    	tMean.create(img.rows,img.cols, CV_8UC3);
-
-	    	cv::Mat rChannel(img.rows,img.cols, CV_8UC1),gChannel(img.rows,img.cols, CV_8UC1),bChannel(img.rows,img.cols, CV_8UC1);
-	    	cv::Mat out[] = {bChannel,gChannel,rChannel};
-	    	cv::Mat tempCol;
-	    	cv::Mat maskCol;//( 53, 71, cv::CV_64FC1, cv::Scalar::all( 0.0 ) );
-
-	    	cv::Scalar meanCol;
-	    	double meanCol1;
-	    	int cnt1,cnt2;//,cnt3; // counters for all dimensions of image (cnt1:row, cnt2:col, cnt3:channels)
-	    	int k,n;
-	    	int height = img.rows, width = img.cols;// channels = img.channels();
-	    	int from_to[] = {0,0, 1,1, 2,2};
-
-	    	n = height;
-	    	k = round(n*(outlierPercent/100)/2);
-	    	maskCol.create(n, 1, CV_8UC1);
-
-	    	for(cnt1=0;cnt1<height;cnt1++){
-	    		if ((cnt1>=0 && cnt1<=k) || ((cnt1>=(height-k) && cnt1<=height)) ) {
-	    			maskCol.at<int8_t>(cnt1,0) = 0;
-	    		} else {
-	    			maskCol.at<int8_t>(cnt1,0) = 1;
-	    		}
-	    	}
-
-	    	// Split color channels
-	    	mixChannels(&img, 1, out, 3, from_to, 3);
-
-	    	// Blue channel
-	    	cv::sort(bChannel,bChannel, cv::SORT_EVERY_COLUMN);
-	    	for(cnt2=0;cnt2<width;cnt2++){
-	    		tempCol = bChannel.col(cnt2);
-	    		tempCol = tempCol.mul(maskCol);
-
-	    		meanCol = mean(tempCol);
-	    		meanCol1 = meanCol[0];
-	    		bChannel.col(cnt2) = cv::Mat::ones(height, 1, bChannel.type())*meanCol1;
-	    	}
-
-	    	// Green channel
-	    	cv::sort(gChannel,gChannel, cv::SORT_EVERY_COLUMN);
-	    	for(cnt2=0;cnt2<width;cnt2++){
-	    		tempCol = gChannel.col(cnt2);
-	    		tempCol = tempCol.mul(maskCol);
-	    		meanCol = mean(tempCol);
-	    		meanCol1 = meanCol[0];
-	    		gChannel.col(cnt2) = cv::Mat::ones(height, 1, gChannel.type())*meanCol1;
-	    	}
-
-	    	// Red channel
-	    	cv::sort(rChannel,rChannel, cv::SORT_EVERY_COLUMN);
-	    	for(cnt2=0;cnt2<width;cnt2++){
-	    		tempCol = rChannel.col(cnt2);
-	    		tempCol = tempCol.mul(maskCol);
-	    		meanCol = mean(tempCol);
-	    		meanCol1 = meanCol[0];
-	    		rChannel.col(cnt2) = cv::Mat::ones(height, 1, rChannel.type())*meanCol1;
-	    	}
-
-	    	merge(out, 3, tMean);
-	    	break;
-	    }
-	    default:{
-	    	std::cout << "Raw image should have either one channel (grayscale image) or three channels (RGB image)"<< std::endl;
-	    	break;
-	    }
-	}
+    // Create the trimmed mean matrix 
+    cv::repeat(average, height, 1, tMean);
 }
