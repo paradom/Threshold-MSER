@@ -206,6 +206,8 @@ void segmentImage(const cv::Mat& img, cv::Mat& imgCorrect, std::vector<cv::Rect>
 }
 
 void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Rect>& bboxes, std::string imgDir, std::string imgName, std::ofstream& measurePtr, Options options) {
+    cv::Rect imgRect(0, 0, imgCorrect.cols, imgCorrect.rows); // use imgRect to make sure box doesn't go off the edge
+
 	// Create crop directories
 	std::string correctCropDir = imgDir + "/corrected_crop";
     fs::create_directory(correctCropDir);
@@ -240,7 +242,11 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
         float minor;
         float height = bboxes[k].height;
         float width = bboxes[k].width;
-        
+
+        // Get mean pixel value for the crop
+        cv::Mat imgCropUnscaled = cv::Mat(imgCorrect, bboxes[k] & imgRect);
+        double mean = cv::sum(imgCropUnscaled)[0] / (height * width);
+
         // Determine if box is irregularly shapped (Abnormally long and thin)
         int hwRatio = 10;
         if ( width < 30 && height > hwRatio * width )
@@ -257,34 +263,30 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
         // Determine if the bbox is too large or small
         if ( area < options.minimum || area > options.maximum )
             continue;
-        auto tl = bboxes[k].tl(); 
-        auto br = bboxes[k].br();
-
-        std::string correctImgFile = correctCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
-        std::string rawImgFile = rawCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
-        #pragma omp critical(write)
-        {
-            // Format: img,area,major,minor,perimeter,x,y,height
-            // TODO: store additional fields (squiggly vs straight), gray level, etc
-            measurePtr << correctImgFile << "," << area << "," << major << "," << minor << "," 
-                << perimeter << "," << x << "," << y << "," << br.x << "," << br.y
-                << "," << height << std::endl; 
-        }
 
         // Re-scale the crop of the image after getting the measurement data written to a file
         cv::Rect scaledBbox = rescaleRect(bboxes[k], 1.5);
 
         // Create a new crop using the intersection of rectangle objects and the image
-        cv::Rect imgRect(0, 0, imgCorrect.cols, imgCorrect.rows); // use imgRect to make sure box doesn't go off the edge
-        cv::Mat imgCropCorrect = cv::Mat(imgCorrect, scaledBbox & imgRect); // TODO: check the speed of this operation
+        std::string correctImgFile = correctCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
+        cv::Mat imgCropCorrect = cv::Mat(imgCorrect, scaledBbox & imgRect);
         cv::imwrite(correctImgFile, imgCropCorrect);
 
         // Crop the original image
+        std::string rawImgFile = rawCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
         cv::Mat imgCropRaw = cv::Mat(img, scaledBbox & imgRect);
         cv::imwrite(rawImgFile, imgCropRaw);
 
 	    // Draw the cropped frames on the image to be saved
 	    cv::rectangle(imgBboxes, bboxes[k], cv::Scalar(0, 0, 255));
+
+        // Write the image data to the measurement file
+        #pragma omp critical(write)
+        {
+            // Format: img,area,major,minor,perimeter,x,y,mean,height
+            measurePtr << correctImgFile << "," << area << "," << major << "," << minor << "," 
+                << perimeter << "," << x << "," << y << "," << mean << "," << height << std::endl; 
+        }
     }
 
     #if defined(WITH_VISUAL)

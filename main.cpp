@@ -235,7 +235,7 @@ int main(int argc, char **argv) {
         // Create a measurement file to save crop info to
         std::string measureFile = measureDir + "/" + fileName + ".csv";
         std::ofstream measurePtr(measureFile);
-        measurePtr << "image,area,major,minor,perimeter,x1,y1,x2,y2,height" << std::endl; 
+        measurePtr << "image,area,major,minor,perimeter,x,y,mean,height" << std::endl; 
 
         // TODO: Add a way to check if file is valid
         // FIXME: cap.read() and cap.grad() are not working properly, aren't throwing errors when reading image
