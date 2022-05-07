@@ -212,7 +212,7 @@ void mser(const cv::Mat& img, std::vector<cv::Rect>& bboxes, int delta=5,
  * @param n The number of frames to grab from the capture device.
  * @param frameCounter REMOVE
  */
-void getFrame(cv::VideoCapture cap, cv::Mat& img, int n, int& frameCounter);
+void getFrame(cv::VideoCapture cap, cv::Mat& img, int n);
 
 /**
  * Segment the image by performing fielding and preprocessing the image, then

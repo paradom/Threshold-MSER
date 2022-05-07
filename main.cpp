@@ -260,7 +260,9 @@ int main(int argc, char **argv) {
 	        	cv::Mat imgGray;
                 #pragma omp critical(getframe)
                 {
-                    getFrame(cap, imgGray, options.numConcatenate, j);
+                    // FIXME: This could be problematic if numConcatenate does not divide the number of frames
+                    getFrame(cap, imgGray, options.numConcatenate);
+                    j+=options.numConcatenate;
                 }
 
                 image_stack_counter += options.numConcatenate;

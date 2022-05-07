@@ -71,15 +71,18 @@ std::string convertInt(int number, int fill) {
 	return ss.str(); //return a string with the contents of the stream
 }
 
-void getFrame(cv::VideoCapture cap, cv::Mat& img, int n, int& frameCounter) {
+void getFrame(cv::VideoCapture cap, cv::Mat& img, int n) {
     cv::Mat frame;
     cv::Mat *frameArray = new cv::Mat[n];
     for(int k=0; k<n; k++){
         cap.read(frame);
+        if (frame.empty()) {
+            std::cerr << "Frame is empty in get frame call, skipping" << std::endl;
+            exit(3);
+        }
         cv::cvtColor(frame, frameArray[k], cv::COLOR_RGB2GRAY);
     }
     cv::vconcat(frameArray, n, img);
-    frameCounter += n - 1; // TODO: see if I can remove the frameCounter
 }
 
 void chopThreshold(const cv::Mat& src, cv::Mat& dst, int thresh){
@@ -273,9 +276,9 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
         cv::imwrite(correctImgFile, imgCropCorrect);
 
         // Crop the original image
-        std::string rawImgFile = rawCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
-        cv::Mat imgCropRaw = cv::Mat(img, scaledBbox & imgRect);
-        cv::imwrite(rawImgFile, imgCropRaw);
+        // std::string rawImgFile = rawCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
+        // cv::Mat imgCropRaw = cv::Mat(img, scaledBbox & imgRect);
+        // cv::imwrite(rawImgFile, imgCropRaw);
 
 	    // Draw the cropped frames on the image to be saved
 	    cv::rectangle(imgBboxes, bboxes[k], cv::Scalar(0, 0, 255));
