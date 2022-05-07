@@ -78,6 +78,7 @@ struct Options
     int delta;
     int variation;
     float outlierPercent;
+    bool fullOutput;
 };
 
 bool containExt(const std::string s, std::string arr[], int len);

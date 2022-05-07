@@ -65,7 +65,8 @@ void helpMsg(std::string executable, Options options) {
         << std::left << std::setw(30) << "" <<  "Larger values lead to more segments. (Default: " << options.variation << ")\n" 
         << std::left << std::setw(30) << "  -e, --epsilon" << "Float between 0 and 1 that represents the maximum overlap between\n"
         << std::left << std::setw(30) << "" << "two rectangle bounding boxes. 0 means that any overlap will mean\n"
-        << std::left << std::setw(30) << "" << "that the bounding boxes are treated as the same. (Default: " << options.epsilon << ")\n" << std::endl;
+        << std::left << std::setw(30) << "" << "that the bounding boxes are treated as the same. (Default: " << options.epsilon << ")\n"
+        << std::left << std::setw(30) << "  -f, --full-ouput" << "If flag is included a directory of full frames is added to output\n" << std::endl;
 }
 
 int main(int argc, char **argv) {
@@ -81,6 +82,7 @@ int main(int argc, char **argv) {
     options.epsilon = 1.3;
     options.delta = 4;
     options.variation = 100;
+    options.fullOutput = false;
 
     // TODO: more robust options with std::find may be worth it
     if (argc == 1) {
@@ -179,6 +181,11 @@ int main(int argc, char **argv) {
                 return 1;
             }
             i+=2;
+		} else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--full-output") == 0) {
+            // If flag exists then add output
+            options.fullOutput = true; 
+
+            i+=1;
 		} else {
             // Display invalid option message
             std::cerr << argv[0] << ": invalid option \'" << argv[i] << "\'" <<

@@ -213,18 +213,15 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
 
 	// Create crop directories
 	std::string correctCropDir = imgDir + "/corrected_crop";
-    fs::create_directory(correctCropDir);
 	std::string rawCropDir = imgDir + "/original_crop";
-    fs::create_directory(rawCropDir);
 	std::string frameDir = imgDir + "/frame/";
-    fs::create_directory(frameDir);
 
-	// Write full video frames to files
-	std::string correctedFrame = frameDir + "/" + imgName + "_corrected.tif";
-	cv::imwrite(correctedFrame, imgCorrect);
-	std::string originalFrame = frameDir + "/" + imgName + "_original.tif";
-	cv::imwrite(originalFrame, img);
-    
+    fs::create_directory(correctCropDir);
+    if ( options.fullOutput ) {
+        fs::create_directory(rawCropDir);
+        fs::create_directory(frameDir);
+    }
+
     // Save image with bounding boxes
 	cv::Mat imgBboxes;
 	cv::cvtColor(imgCorrect, imgBboxes, cv::COLOR_GRAY2RGB);
@@ -276,9 +273,11 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
         cv::imwrite(correctImgFile, imgCropCorrect);
 
         // Crop the original image
-        // std::string rawImgFile = rawCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
-        // cv::Mat imgCropRaw = cv::Mat(img, scaledBbox & imgRect);
-        // cv::imwrite(rawImgFile, imgCropRaw);
+        if ( options.fullOutput ) {
+            std::string rawImgFile = rawCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
+            cv::Mat imgCropRaw = cv::Mat(img, scaledBbox & imgRect);
+            cv::imwrite(rawImgFile, imgCropRaw);
+        }
 
 	    // Draw the cropped frames on the image to be saved
 	    cv::rectangle(imgBboxes, bboxes[k], cv::Scalar(0, 0, 255));
@@ -297,8 +296,16 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
     cv::waitKey(0);
     #endif
 
-	std::string bboxFrame = frameDir + "/" + imgName + "_bboxes.tif";
-	cv::imwrite(bboxFrame, imgBboxes);
+	// Write full video frames to files
+    if (options.fullOutput) {
+	    std::string correctedFrame = frameDir + "/" + imgName + "_corrected.tif";
+	    std::string originalFrame = frameDir + "/" + imgName + "_original.tif";
+	    std::string bboxFrame = frameDir + "/" + imgName + "_bboxes.tif";
+
+	    cv::imwrite(correctedFrame, imgCorrect);
+	    cv::imwrite(originalFrame, img);
+	    cv::imwrite(bboxFrame, imgBboxes);
+    }
 }
 
 cv::Rect rescaleRect(const cv::Rect& rect, float scale)
