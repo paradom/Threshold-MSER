@@ -70,6 +70,18 @@ void helpMsg(std::string executable, Options options) {
 }
 
 int main(int argc, char **argv) {
+    // Print the number of threads that will be used by this program
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            #if defined(WITH_OPENMP)
+            int nthreads = omp_get_num_threads();
+            std::cout << "OMP Num Threads: " << nthreads << std::endl;
+            #endif
+        }
+    }
+
     // Set the default options
     Options options;
     options.input = "";
@@ -246,13 +258,12 @@ int main(int argc, char **argv) {
 
         // TODO: Add a way to check if file is valid
         // FIXME: cap.read() and cap.grad() are not working properly, aren't throwing errors when reading image
-        // This is a temporary solution to determine if the input file is an image or video
-        cv::Mat testFrame;
+        // This is a temporary solution to determine if the input file is an image or video 
+        // cv::Mat testFrame;
         std::string ext = file.extension();
         bool validImage = (ext == ".png");
 
         if (!validImage) { // If the file is a video
-
             cv::VideoCapture cap(file.string());
             if (!cap.isOpened()) {
                 std::cerr << "Invalid file: " << file.string() << std::endl;
@@ -281,6 +292,9 @@ int main(int argc, char **argv) {
                 std::vector<cv::Rect> bboxes;
                 segmentImage(imgGray, imgCorrect, bboxes, options);
                 saveCrops(imgGray, imgCorrect, bboxes, imgDir, imgName, measurePtr, options);
+
+                imgGray.release();
+                imgCorrect.release();
 	        }
 	        // When video is done being processed release the capture object
 	        cap.release();
@@ -305,6 +319,10 @@ int main(int argc, char **argv) {
             std::vector<cv::Rect> bboxes;
             segmentImage(imgGray, imgCorrect, bboxes, options);
             saveCrops(imgGray, imgCorrect, bboxes, imgDir, imgName, measurePtr, options);
+
+            imgRaw.release();
+            imgGray.release();
+            imgCorrect.release();
         }
 
         measurePtr.close();

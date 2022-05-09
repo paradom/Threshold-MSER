@@ -73,16 +73,28 @@ std::string convertInt(int number, int fill) {
 
 void getFrame(cv::VideoCapture cap, cv::Mat& img, int n) {
     cv::Mat frame;
-    cv::Mat *frameArray = new cv::Mat[n];
-    for(int k=0; k<n; k++){
+
+    if(n == 1) {
         cap.read(frame);
-        if (frame.empty()) {
-            std::cerr << "Frame is empty in get frame call, skipping" << std::endl;
-            exit(3);
-        }
-        cv::cvtColor(frame, frameArray[k], cv::COLOR_RGB2GRAY);
+        cv::cvtColor(frame, img, cv::COLOR_RGB2GRAY);
     }
-    cv::vconcat(frameArray, n, img);
+    else {
+        std::cerr << "Not yet supported, can only use n=1" << std::endl;
+        exit(3);
+        cv::Mat *frameArray = new cv::Mat[n];
+        for(int k=0; k<n; k++){
+            cap.read(frame);
+            if (frame.empty()) {
+                std::cerr << "Frame is empty in get frame call, skipping" << std::endl;
+                exit(3);
+            }
+            cv::cvtColor(frame, frameArray[k], cv::COLOR_RGB2GRAY);
+        }
+        cv::vconcat(frameArray, n, img);
+
+        // FIXME: need to release memory from the frameArray
+    }
+    frame.release();
 }
 
 void chopThreshold(const cv::Mat& src, cv::Mat& dst, int thresh){
