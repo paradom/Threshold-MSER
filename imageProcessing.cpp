@@ -452,6 +452,23 @@ void flatField(const cv::Mat& src, cv::Mat& dst, float percent) {
     cv::divide(src, imgCalib, dst, 255); // performs the flat fielding by dividing the arrays
 }
 
+int fillSides(cv::Mat& img, int left, int right, int fill) {
+    if (left + right > img.cols) {
+        std::cerr << "Error: The size of the left and right crops are larger then the image." << std::endl;
+        return 1;
+    }
+    
+    // Fill the sides with pixel "fill"
+    for (int i = 0; i < left; i++) {
+        img.col(i).setTo(fill);
+    }
+    for (int i = img.cols - right; i < img.cols; i++) {
+        img.col(i).setTo(fill);
+    }
+    
+    return 0;
+}
+
 void trimMean(const cv::Mat& img, cv::Mat& tMean, float percent) {
     cv::Mat sort;
 	cv::sort(img, sort, cv::SORT_EVERY_COLUMN);
