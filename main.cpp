@@ -66,7 +66,9 @@ void helpMsg(std::string executable, Options options) {
         << std::left << std::setw(30) << "  -e, --epsilon" << "Float between 0 and 1 that represents the maximum overlap between\n"
         << std::left << std::setw(30) << "" << "two rectangle bounding boxes. 0 means that any overlap will mean\n"
         << std::left << std::setw(30) << "" << "that the bounding boxes are treated as the same. (Default: " << options.epsilon << ")\n"
-        << std::left << std::setw(30) << "  -f, --full-ouput" << "If flag is included a directory of full frames is added to output\n" << std::endl;
+        << std::left << std::setw(30) << "  -f, --full-ouput" << "If flag is included a directory of full frames is added to output\n"
+        << std::left << std::setw(30) << "  -l, --left-crop" << "Crop this many pixels off of the left side of the image\n"
+        << std::left << std::setw(30) << "  -r, --right-crop" << "Crop this many pixels off of the right side of the image" << std::endl;
 }
 
 int main(int argc, char **argv) {
@@ -95,6 +97,8 @@ int main(int argc, char **argv) {
     options.delta = 4;
     options.variation = 100;
     options.fullOutput = false;
+    options.left = 0;
+    options.right = 0;
 
     // TODO: more robust options with std::find may be worth it
     if (argc == 1) {
@@ -198,6 +202,29 @@ int main(int argc, char **argv) {
             options.fullOutput = true; 
 
             i+=1;
+		} else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--left-crop") == 0) {
+            // Validate the input type
+            if ( !isInt(argv[i+1]) ) {
+                std::cerr << argv[i+1] << " is not a valid input. Left crop must be a positive integer." << std::endl;
+                return 1;
+            } else if (std::stoi(argv[i+1]) < 0) {
+                std::cerr << argv[i+1] << " is not a valid input. Left crop must be a positive integer." << std::endl;
+                return 1;
+            }
+
+            options.left = std::stoi(argv[i+1]);
+            i+=2;
+		} else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--right-crop") == 0) {
+            // Validate the input type
+            if ( !isInt(argv[i+1]) ) {
+                std::cerr << argv[i+1] << " is not a valid input. Right crop must be a positive integer." << std::endl;
+                return 1;
+            } else if (std::stoi(argv[i+1]) < 0) {
+                std::cerr << argv[i+1] << " is not a valid input. Right crop must be a positive integer." << std::endl;
+                return 1;
+            }
+            options.right = std::stoi(argv[i+1]);
+            i+=2;
 		} else {
             // Display invalid option message
             std::cerr << argv[0] << ": invalid option \'" << argv[i] << "\'" <<
@@ -288,6 +315,11 @@ int main(int argc, char **argv) {
                 std::string imgDir = segmentDir + "/" + fileName + "/" + imgName;
                 fs::create_directories(imgDir);
 
+                int fill = fillSides(imgGray, options.left, options.right);
+                if (fill != 0) {
+                    exit( 1 );
+                }
+
                 cv::Mat imgCorrect;
                 std::vector<cv::Rect> bboxes;
                 segmentImage(imgGray, imgCorrect, bboxes, options);
@@ -313,6 +345,11 @@ int main(int argc, char **argv) {
             std::string imgName = fileName;
             std::string imgDir = segmentDir + "/" + imgName;
             fs::create_directories(imgDir);
+
+            int fill = fillSides(imgGray, options.left, options.right);
+            if (fill != 0) {
+                exit( 1 );
+            }
             
             // Segment the grayscale image and save its' crops.
             cv::Mat imgCorrect;
