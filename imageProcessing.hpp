@@ -78,6 +78,9 @@ struct Options
     int delta;
     int variation;
     float outlierPercent;
+    bool fullOutput;
+    int left;
+    int right;
 };
 
 bool containExt(const std::string s, std::string arr[], int len);
@@ -155,6 +158,19 @@ float SNR(const cv::Mat& img);
 void flatField(const cv::Mat& src, cv::Mat& dst, float percent);
 
 /**
+ * Fills the left and right columns of the input img with pixels with value fill.
+ * The original cv::Mat img is modified in place.
+ * This function was added for shadows that appeared on the side of isiis images.
+ *
+ * @param img The image to fill the left and right sides.
+ * @param left The number of columns on the left to fill.
+ * @param right The number of columns on the right to fill.
+ *
+ * @return If left and right are valid returns 0, if not returns 1.
+ */
+int fillSides(cv::Mat& img, int left, int right, int fill=255);
+
+/**
  * Finds the verticle mean of each row of the iages.
  *
  * trimMean calculates the trimmed mean of each vertical strip of the image. trimMean
@@ -212,7 +228,7 @@ void mser(const cv::Mat& img, std::vector<cv::Rect>& bboxes, int delta=5,
  * @param n The number of frames to grab from the capture device.
  * @param frameCounter REMOVE
  */
-void getFrame(cv::VideoCapture cap, cv::Mat& img, int n, int& frameCounter);
+void getFrame(cv::VideoCapture cap, cv::Mat& img, int n);
 
 /**
  * Segment the image by performing fielding and preprocessing the image, then

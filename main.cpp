@@ -65,10 +65,25 @@ void helpMsg(std::string executable, Options options) {
         << std::left << std::setw(30) << "" <<  "Larger values lead to more segments. (Default: " << options.variation << ")\n" 
         << std::left << std::setw(30) << "  -e, --epsilon" << "Float between 0 and 1 that represents the maximum overlap between\n"
         << std::left << std::setw(30) << "" << "two rectangle bounding boxes. 0 means that any overlap will mean\n"
-        << std::left << std::setw(30) << "" << "that the bounding boxes are treated as the same. (Default: " << options.epsilon << ")\n" << std::endl;
+        << std::left << std::setw(30) << "" << "that the bounding boxes are treated as the same. (Default: " << options.epsilon << ")\n"
+        << std::left << std::setw(30) << "  -f, --full-ouput" << "If flag is included a directory of full frames is added to output\n"
+        << std::left << std::setw(30) << "  -l, --left-crop" << "Crop this many pixels off of the left side of the image\n"
+        << std::left << std::setw(30) << "  -r, --right-crop" << "Crop this many pixels off of the right side of the image" << std::endl;
 }
 
 int main(int argc, char **argv) {
+    // Print the number of threads that will be used by this program
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            #if defined(WITH_OPENMP)
+            int nthreads = omp_get_num_threads();
+            std::cout << "OMP Num Threads: " << nthreads << std::endl;
+            #endif
+        }
+    }
+
     // Set the default options
     Options options;
     options.input = "";
@@ -81,6 +96,9 @@ int main(int argc, char **argv) {
     options.epsilon = 1.3;
     options.delta = 4;
     options.variation = 100;
+    options.fullOutput = false;
+    options.left = 0;
+    options.right = 0;
 
     // TODO: more robust options with std::find may be worth it
     if (argc == 1) {
@@ -179,6 +197,34 @@ int main(int argc, char **argv) {
                 return 1;
             }
             i+=2;
+		} else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--full-output") == 0) {
+            // If flag exists then add output
+            options.fullOutput = true; 
+
+            i+=1;
+		} else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--left-crop") == 0) {
+            // Validate the input type
+            if ( !isInt(argv[i+1]) ) {
+                std::cerr << argv[i+1] << " is not a valid input. Left crop must be a positive integer." << std::endl;
+                return 1;
+            } else if (std::stoi(argv[i+1]) < 0) {
+                std::cerr << argv[i+1] << " is not a valid input. Left crop must be a positive integer." << std::endl;
+                return 1;
+            }
+
+            options.left = std::stoi(argv[i+1]);
+            i+=2;
+		} else if (strcmp(argv[i], "-r") == 0 || strcmp(argv[i], "--right-crop") == 0) {
+            // Validate the input type
+            if ( !isInt(argv[i+1]) ) {
+                std::cerr << argv[i+1] << " is not a valid input. Right crop must be a positive integer." << std::endl;
+                return 1;
+            } else if (std::stoi(argv[i+1]) < 0) {
+                std::cerr << argv[i+1] << " is not a valid input. Right crop must be a positive integer." << std::endl;
+                return 1;
+            }
+            options.right = std::stoi(argv[i+1]);
+            i+=2;
 		} else {
             // Display invalid option message
             std::cerr << argv[0] << ": invalid option \'" << argv[i] << "\'" <<
@@ -235,17 +281,16 @@ int main(int argc, char **argv) {
         // Create a measurement file to save crop info to
         std::string measureFile = measureDir + "/" + fileName + ".csv";
         std::ofstream measurePtr(measureFile);
-        measurePtr << "image,area,major,minor,perimeter,x1,y1,x2,y2,height" << std::endl; 
+        measurePtr << "image,area,major,minor,perimeter,x,y,mean,height" << std::endl; 
 
         // TODO: Add a way to check if file is valid
         // FIXME: cap.read() and cap.grad() are not working properly, aren't throwing errors when reading image
-        // This is a temporary solution to determine if the input file is an image or video
-        cv::Mat testFrame;
+        // This is a temporary solution to determine if the input file is an image or video 
+        // cv::Mat testFrame;
         std::string ext = file.extension();
         bool validImage = (ext == ".png");
 
         if (!validImage) { // If the file is a video
-
             cv::VideoCapture cap(file.string());
             if (!cap.isOpened()) {
                 std::cerr << "Invalid file: " << file.string() << std::endl;
@@ -260,7 +305,9 @@ int main(int argc, char **argv) {
 	        	cv::Mat imgGray;
                 #pragma omp critical(getframe)
                 {
-                    getFrame(cap, imgGray, options.numConcatenate, j);
+                    // FIXME: This could be problematic if numConcatenate does not divide the number of frames
+                    getFrame(cap, imgGray, options.numConcatenate);
+                    j+=options.numConcatenate;
                 }
 
                 image_stack_counter += options.numConcatenate;
@@ -268,10 +315,18 @@ int main(int argc, char **argv) {
                 std::string imgDir = segmentDir + "/" + fileName + "/" + imgName;
                 fs::create_directories(imgDir);
 
+                int fill = fillSides(imgGray, options.left, options.right);
+                if (fill != 0) {
+                    exit( 1 );
+                }
+
                 cv::Mat imgCorrect;
                 std::vector<cv::Rect> bboxes;
                 segmentImage(imgGray, imgCorrect, bboxes, options);
                 saveCrops(imgGray, imgCorrect, bboxes, imgDir, imgName, measurePtr, options);
+
+                imgGray.release();
+                imgCorrect.release();
 	        }
 	        // When video is done being processed release the capture object
 	        cap.release();
@@ -290,12 +345,21 @@ int main(int argc, char **argv) {
             std::string imgName = fileName;
             std::string imgDir = segmentDir + "/" + imgName;
             fs::create_directories(imgDir);
+
+            int fill = fillSides(imgGray, options.left, options.right);
+            if (fill != 0) {
+                exit( 1 );
+            }
             
             // Segment the grayscale image and save its' crops.
             cv::Mat imgCorrect;
             std::vector<cv::Rect> bboxes;
             segmentImage(imgGray, imgCorrect, bboxes, options);
             saveCrops(imgGray, imgCorrect, bboxes, imgDir, imgName, measurePtr, options);
+
+            imgRaw.release();
+            imgGray.release();
+            imgCorrect.release();
         }
 
         measurePtr.close();
