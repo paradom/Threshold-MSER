@@ -2,29 +2,29 @@
 
 Copyright © 2022 Oregon State University
 
-Dominic W. Daprano  
-Sheng Tse Tsai   
-Moritz S. Schmid  
-Christopher M. Sullivan  
-Robert K. Cowen  
+Dominic W. Daprano
+Sheng Tse Tsai
+Moritz S. Schmid
+Christopher M. Sullivan
+Robert K. Cowen
 
-Hatfield Marine Science Center  
-Center for Qualitative Life Sciences  
-Oregon State University  
-Corvallis, OR 97331  
+Hatfield Marine Science Center
+Center for Qualitative Life Sciences
+Oregon State University
+Corvallis, OR 97331
 
-This program is distributed WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+This is a contribution to World Wide Web of Plankton Image Curation [wwwPIC](https://sites.google.com/view/wwwpic/home), a project funded by the Belmont Forum and the National Science Foundation (NSF award number 1927710). 
+
+This program is described in Panaïotis et al. 2022:
+Panaïotis T, Caray–Counil L, Woodward B, Schmid MS, Daprano D, Tsai ST, Sullivan CM, Cowen RK and Irisson J-O (2022) 
+Content-Aware Segmentation of Objects Spanning a Large Size Range: Application to Plankton Images. Front. Mar. Sci. 9:870005. doi: 10.3389/fmars.2022.870005 
+https://www.frontiersin.org/articles/10.3389/fmars.2022.870005/full
+
+This program is distributed WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 This program is distributed under the GNU GPL v 2.0 or later license.
 
-Any User wishing to make commercial use of the Software must contact the authors 
-or Oregon State University directly to arrange an appropriate license.
-Commercial use includes (1) use of the software for commercial purposes, including 
-integrating or incorporating all or part of the source code into a product 
-for sale or license by, or on behalf of, User to third parties, or (2) distribution 
-of the binary or source code to third parties for use with a commercial 
-product sold or licensed by, or on behalf of, User.
+Any User wishing to make commercial use of the Software must contact the authors or Oregon State University directly to arrange an appropriate license. Commercial use includes (1) use of the software for commercial purposes, including integrating or incorporating all or part of the source code into a product for sale or license by, or on behalf of, User to third parties, or (2) distribution of the binary or source code to third parties for use with a commercial product sold or licensed by, or on behalf of, User.
 
 ------
 
