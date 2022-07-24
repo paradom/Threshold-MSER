@@ -154,6 +154,11 @@ void segmentImage(const cv::Mat& img, cv::Mat& imgCorrect, std::vector<cv::Rect>
     flatField(img, imgCorrect, options.outlierPercent);
 
     #if defined(WITH_VISUAL)
+    cv::imshow("viewer", imgCorrect);
+    cv::waitKey(0);
+    #endif
+
+    #if defined(WITH_VISUAL)
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end-start;
     std::cout << "Flatfield time: " << elapsed_seconds.count() << "s\n";    
@@ -165,37 +170,40 @@ void segmentImage(const cv::Mat& img, cv::Mat& imgCorrect, std::vector<cv::Rect>
     std::cout << "Image SNR: " << imgSNR << std::endl;
     #endif
     if (imgSNR > options.signalToNoise) {
-        mser(imgCorrect, bboxes, options.delta, options.variation, options.epsilon);
-    } else {
+        cv::Mat imgPreprocess;
+        preprocess(imgCorrect, imgPreprocess, 1);
+        mser(imgPreprocess, bboxes, options.minArea, options.maxArea, options.delta, options.variation, options.epsilon);
+    } else if (imgSNR > 42) {
+
         // Create a mask that includes all of the regions of the image with
         // the darkest pixels which MSER method can be performed on.
-        int thresh = 140; 
+        cv::Mat imgPreprocess;
+        preprocess(imgCorrect, imgPreprocess, 8);
+        
         cv::Mat imgThresh;
-        cv::threshold(imgCorrect, imgThresh, thresh, 255, cv::THRESH_BINARY);
+        cv::threshold(imgPreprocess, imgThresh, options.threshold, 255, cv::THRESH_BINARY);
 
 	    cv::Mat mask = cv::Mat::zeros(img.size(), img.type());
 	    cv::Mat imgCorrectMask(img.size(), img.type(), cv::Scalar(255));
 
-        bool contour = true;
-        bool mesh = false;
+        bool contour = true, mesh = false;
         if (contour) {
             std::vector<std::vector <cv::Point> > contours; // Vector for storing contour
             std::vector<cv::Vec4i> hierarchy;
             cv::findContours(imgThresh, contours, hierarchy, cv::RETR_LIST, cv::CHAIN_APPROX_TC89_L1);
-            cv::Mat imgCorrectBbox;
-            cv::cvtColor(imgCorrect, imgCorrectBbox, cv::COLOR_GRAY2RGB);
 
             // create mask based on darkest regions
-            cv::Rect boundRect;
             cv::Rect maskRect(0, 0, mask.cols, mask.rows); // use maskRect to make sure box doesn't go off the edge
             for(int i=0; i<contours.size(); i++){
-                boundRect = cv::boundingRect(contours[i]);
-                if (boundRect.area() > options.maximum)
-                    continue;
+                cv::Rect boundRect = cv::boundingRect(contours[i]);
+                if (boundRect.area() > options.maxArea)
+                      continue;
 
                 float scaleFactor = 1.2;
                 cv::Rect largeRect = rescaleRect(boundRect, scaleFactor);
-                cv::Mat roi = mask(largeRect & maskRect); // FIXME: remove & - really slow
+                cv::Rect intersectRect = boundRect & maskRect; // FIXME: remove & - really slow
+                cv::Mat roi = mask(intersectRect); 
+                
                 roi.setTo(255);
             }
         }
@@ -216,21 +224,58 @@ void segmentImage(const cv::Mat& img, cv::Mat& imgCorrect, std::vector<cv::Rect>
         cv::waitKey(0);
         #endif
 
-        mser(imgCorrectMask, bboxes, options.delta, options.variation, options.epsilon);
+        mser(imgCorrectMask, bboxes, options.minArea, options.maxArea, options.delta, options.variation, options.epsilon);
+    } else {
+        contourBbox(imgCorrect, bboxes, 90, options.minArea, options.maxArea, options.epsilon);
     }
 }
+
+void contourBbox(const cv::Mat& img, std::vector<cv::Rect>& bboxes, int threshold, int minArea, int maxArea, float eps){
+    cv::Mat imgPreprocess;
+    preprocess(img, imgPreprocess, 8);
+    
+    cv::Mat imgThresh;
+    cv::threshold(imgPreprocess, imgThresh, threshold, 255, cv::THRESH_BINARY);
+
+    std::vector<std::vector <cv::Point> > contours; // Vector for storing contour
+    std::vector<cv::Vec4i> hierarchy;
+    cv::findContours(imgThresh, contours, hierarchy, cv::RETR_LIST, cv::CHAIN_APPROX_TC89_L1);
+
+    // create mask based on darkest regions
+    #if defined(WITH_VISUAL)
+	cv::Mat imgContours;
+	cv::cvtColor(img, imgContours, cv::COLOR_GRAY2RGB);
+    #endif
+
+    for(int i=0; i<contours.size(); i++){
+        cv::Rect bbox = cv::boundingRect(contours[i]);
+        if (bbox.area() < minArea || bbox.area() > maxArea)
+             continue;
+
+        bboxes.push_back(bbox);
+
+        #if defined(WITH_VISUAL)
+	    cv::rectangle(imgContours, bbox, cv::Scalar(0, 0, 255));
+        #endif
+    }
+    // groupRect(bboxes, 1, 2);
+
+    #if defined(WITH_VISUAL)
+    cv::imshow("viewer", imgContours);
+    cv::waitKey(0);
+    #endif
+}
+
 
 void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Rect>& bboxes, std::string imgDir, std::string imgName, std::ofstream& measurePtr, Options options) {
     cv::Rect imgRect(0, 0, imgCorrect.cols, imgCorrect.rows); // use imgRect to make sure box doesn't go off the edge
 
 	// Create crop directories
 	std::string correctCropDir = imgDir + "/corrected_crop";
-	std::string rawCropDir = imgDir + "/original_crop";
 	std::string frameDir = imgDir + "/frame/";
 
     fs::create_directory(correctCropDir);
     if ( options.fullOutput ) {
-        fs::create_directory(rawCropDir);
         fs::create_directory(frameDir);
     }
 
@@ -238,13 +283,13 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
 	cv::Mat imgBboxes;
 	cv::cvtColor(imgCorrect, imgBboxes, cv::COLOR_GRAY2RGB);
 
-	int num_bboxes = bboxes.size();
-    for (int k=0; k<num_bboxes; k++) {
+	int numBboxes = bboxes.size();
+    for (int k=0; k<numBboxes; k++) {
         // Get measurement data
         float area = bboxes[k].area();
 
         // Determine if the bbox is too large or small
-        if ( area < options.minimum || area > options.maximum )
+        if ( area < options.minArea || area > options.maxArea )
             continue;
 
         float perimeter = bboxes[k].height + bboxes[k].width * 2.0;
@@ -273,7 +318,7 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
         }
 
         // Determine if the bbox is too large or small
-        if ( area < options.minimum || area > options.maximum )
+        if ( area < options.minArea || area > options.maxArea )
             continue;
 
         // Re-scale the crop of the image after getting the measurement data written to a file
@@ -284,26 +329,20 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
         cv::Mat imgCropCorrect = cv::Mat(imgCorrect, scaledBbox & imgRect);
         cv::imwrite(correctImgFile, imgCropCorrect);
 
-        // Crop the original image
-        if ( options.fullOutput ) {
-            std::string rawImgFile = rawCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
-            cv::Mat imgCropRaw = cv::Mat(img, scaledBbox & imgRect);
-            cv::imwrite(rawImgFile, imgCropRaw);
-        }
-
 	    // Draw the cropped frames on the image to be saved
 	    cv::rectangle(imgBboxes, bboxes[k], cv::Scalar(0, 0, 255));
 
         // Write the image data to the measurement file
+        // Format: img,area,major,minor,perimeter,x,y,mean,height
         #pragma omp critical(write)
         {
-            // Format: img,area,major,minor,perimeter,x,y,mean,height
             measurePtr << correctImgFile << "," << area << "," << major << "," << minor << "," 
-                << perimeter << "," << x << "," << y << "," << mean << "," << height << std::endl; 
+             << perimeter << "," << x << "," << y << "," << mean << "," << height << std::endl; 
         }
     }
 
     #if defined(WITH_VISUAL)
+    std::cout << "Bounding Boxes found: " << numBboxes << std::endl;
     cv::imshow("viewer", imgBboxes);
     cv::waitKey(0);
     #endif
@@ -340,14 +379,22 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     // Third argument of partion is a predicate operator that looks for a method of the class
     // that will return true when elements are apart of the same partition
     std::vector<int> labels;
-    int nclasses = partition(rectList, labels, OverlapRects(eps));
+    int nclasses = partition(rectList, labels, OverlapRects2(eps));
+    // int nclasses = partition(rectList, labels, cv::SimilarRects(eps));
 
     // labels correspond to the location of the rectangle in space 
     std::vector<cv::Rect> rrects(nclasses);
     std::vector<int> rweights(nclasses, 0);
     int nlabels = (int)labels.size();
+    for (int i = 0; i < nlabels; i++) {
+        int cls = labels[i];
+        rrects[cls].width = rectList[i].width;
+        rrects[cls].height = rectList[i].height;
+        rrects[cls].x = rectList[i].x;
+        rrects[cls].y = rectList[i].y;
+    }
 
-    bool bounds = true, intersect = false;
+    bool bounds = true, intersect = false, max = false, _union = false;
     if(bounds) {
         for (int i = 0; i < nlabels; i++) {
             int cls = labels[i];
@@ -364,13 +411,39 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
             rweights[cls]++;
         }
     }
-    if(intersect) {
+    if(_union) {
         for (int i = 0; i < nlabels; i++) {
             int cls = labels[i];
             rrects[cls] = rrects[cls] | rectList[i];
             rweights[cls]++;
         }
     }
+    if(max) { // FIXME not functioning properly
+        for (int i = 0; i < nlabels; i++) {
+            int cls = labels[i]; // get the class label for the image
+            float br_x = rectList[i].br().x;
+            float br_y = rectList[i].br().y;
+            float tl_x = rectList[i].x;
+            float tl_y = rectList[i].y;
+            
+            if (rrects[cls].br().x < br_x) {
+                rrects[cls].width += br_x - rrects[cls].br().x;
+            }
+            if (rrects[cls].br().y < br_y) {
+                rrects[cls].height += br_y - rrects[cls].br().y;
+            }
+            if (rrects[cls].x > tl_x) {
+                rrects[cls].x = tl_x;
+                rrects[cls].width += rrects[cls].br().x - br_x;
+            }
+            if (rrects[cls].y > tl_y) {
+                rrects[cls].y = tl_y;
+                rrects[cls].height += rrects[cls].br().y - br_y;
+            }
+            rweights[cls]++;
+        }
+    }
+
     rectList.clear();
 
     for (int i = 0; i < nclasses; i++)
@@ -381,25 +454,21 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     }
 }
 
-void mser(const cv::Mat& img, std::vector<cv::Rect>& bboxes, int delta, int max_variation, float eps) {
-    int min_area = 50;
-    int max_area = 400000;
-    
-    cv::Ptr<cv::MSER> detector = cv::MSER::create(delta, min_area, max_area, max_variation); 
+void mser(const cv::Mat& img, std::vector<cv::Rect>& bboxes, int minArea, int maxArea, int delta, int maxVariation, float eps){
+    cv::Ptr<cv::MSER> detector = cv::MSER::create(delta, minArea, maxArea, maxVariation); 
 	std::vector<std::vector<cv::Point>> msers;
 	detector->detectRegions(img, msers, bboxes);
 
     #if defined(WITH_VISUAL)
     // Create an image with all of the bboxes on it from MSER
-	cv::Mat img_bboxes;
-	cv::cvtColor(img, img_bboxes, cv::COLOR_GRAY2RGB);
+	cv::Mat imgBboxes;
+	cv::cvtColor(img, imgBboxes, cv::COLOR_GRAY2RGB);
 	for(int i=0;i<bboxes.size();i++){
-	    cv::rectangle(img_bboxes, bboxes[i], cv::Scalar(0, 0, 255));
+	    cv::rectangle(imgBboxes, bboxes[i], cv::Scalar(0, 0, 255));
 	}
-    cv::imshow("viewer", img_bboxes);
+    cv::imshow("viewer", imgBboxes);
     cv::waitKey(0);
     #endif
-
 
     #if defined(WITH_VISUAL)
     auto start = std::chrono::steady_clock::now();

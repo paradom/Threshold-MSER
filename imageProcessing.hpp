@@ -61,6 +61,18 @@ public:
     double eps;
 };
 
+class OverlapRects2
+{
+public:
+    OverlapRects2(double _eps) : eps(_eps) {}
+    inline bool operator()(const cv::Rect& r1, const cv::Rect& r2) const
+    {
+        // FIXME: Add scaling with eps
+        return (r1 & r2).area() > 0;
+    }
+    double eps;
+};
+
 /**
  * @struct Options 
  *
@@ -72,11 +84,12 @@ struct Options
     std::string outputDirectory;
     int numConcatenate;
     int signalToNoise;
-    int minimum;
-    int maximum;
+    int minArea;
+    int maxArea;
     float epsilon;
     int delta;
     int variation;
+    int threshold;
     float outlierPercent;
     bool fullOutput;
     int left;
@@ -188,6 +201,8 @@ int fillSides(cv::Mat& img, int left, int right, int fill=255);
  */
 void trimMean(const cv::Mat& img, cv::Mat& tMean, float percent);
 
+void preprocess(const cv::Mat& src, cv::Mat& dst, float erosion_size);
+
 /**
  * Different implementation of the OpenCV groupRectangles function.
  *
@@ -216,8 +231,11 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold,
  * so that they merge.
  *
  */
-void mser(const cv::Mat& img, std::vector<cv::Rect>& bboxes, int delta=5, 
-        int max_variation=5, float eps=.3);
+void mser(const cv::Mat& img, std::vector<cv::Rect>& bboxes, int minArea=50, 
+        int maxArea=400000, int delta=5, int max_variation=5, float eps=.3);
+
+void contourBbox(const cv::Mat& img, std::vector<cv::Rect>& bboxes, 
+        int threshold, int minArea, int maxArea, float eps);
 
 /**
  * Gets the next n frames from the video capture device capture device. Stores

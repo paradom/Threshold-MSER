@@ -56,8 +56,8 @@ void helpMsg(std::string executable, Options options) {
         << std::left << std::setw(30) << "  -s, --signal-to-noise" << "The cutoff signal to noise ratio that is used in determining\n"
         << std::left << std::setw(30) << "" << "which frames from the video file get segmented (Default: " << options.signalToNoise << ")\n"
         << std::left << std::setw(30) << "  -p, --outlier-percent" << "Percentage of darkest and lightest pixels to throw out before flat-fielding (Default: " << options.outlierPercent << ")\n"
-        << std::left << std::setw(30) << "  -M, --maximum" << "Maximum area of a segmented blob (Default: " << options.maximum << ")\n" 
-        << std::left << std::setw(30) << "  -m, --minimum" << "Minimum area of a segmented blob. (Default: " << options.minimum << ")\n"
+        << std::left << std::setw(30) << "  -M, --maxArea" << "Maximum area of a segmented blob (Default: " << options.maxArea << ")\n" 
+        << std::left << std::setw(30) << "  -m, --minArea" << "Minimum area of a segmented blob. (Default: " << options.minArea << ")\n"
         << std::left << std::setw(30) << "  -d, --delta" << "Delta is a parameter for MSER. Delta is the number of steps (changes\n"
         << std::left << std::setw(30) << "" << "in pixel brightness) MSER uses to compare the size of connected regions.\n" 
         << std::left << std::setw(30) << "" <<  "A smaller delta will produce more segments. (Default: " << options.delta << ")\n"
@@ -66,6 +66,8 @@ void helpMsg(std::string executable, Options options) {
         << std::left << std::setw(30) << "  -e, --epsilon" << "Float between 0 and 1 that represents the maximum overlap between\n"
         << std::left << std::setw(30) << "" << "two rectangle bounding boxes. 0 means that any overlap will mean\n"
         << std::left << std::setw(30) << "" << "that the bounding boxes are treated as the same. (Default: " << options.epsilon << ")\n"
+        << std::left << std::setw(30) << "  -t, --threshold" << "Value to threshold the images for low signal to noise images \n"
+        << std::left << std::setw(30) << "" <<  "(Default: " << options.threshold << ")\n" 
         << std::left << std::setw(30) << "  -f, --full-ouput" << "If flag is included a directory of full frames is added to output\n"
         << std::left << std::setw(30) << "  -l, --left-crop" << "Crop this many pixels off of the left side of the image\n"
         << std::left << std::setw(30) << "  -r, --right-crop" << "Crop this many pixels off of the right side of the image" << std::endl;
@@ -91,11 +93,12 @@ int main(int argc, char **argv) {
     options.signalToNoise = 50;
     options.outlierPercent = .05;
     options.numConcatenate = 1;
-    options.minimum = 50;
-    options.maximum = 400000;
+    options.minArea = 50;
+    options.maxArea = 400000;
     options.epsilon = 1.3;
     options.delta = 4;
     options.variation = 100;
+    options.threshold = 140;
     options.fullOutput = false;
     options.left = 0;
     options.right = 0;
@@ -146,21 +149,21 @@ int main(int argc, char **argv) {
             }
             options.numConcatenate = std::stoi(argv[i+1]);
             i+=2;
-		} else if (strcmp(argv[i], "-M") == 0 || strcmp(argv[i], "--maximum") == 0) {
+		} else if (strcmp(argv[i], "-M") == 0 || strcmp(argv[i], "--maxArea") == 0) {
             // Validate the input type
             if ( !isInt(argv[i+1]) ) {
                 std::cerr << argv[i+1] << " is not a valid input. Maximum must be an integer." << std::endl;
                 return 1;
             }
-            options.maximum = std::stoi(argv[i+1]);
+            options.maxArea = std::stoi(argv[i+1]);
             i+=2;
-		} else if (strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--minimum") == 0) {
+		} else if (strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--minArea") == 0) {
             // Validate the input type
             if ( !isInt(argv[i+1]) ) {
                 std::cerr << argv[i+1] << " is not a valid input. Minimum must be an integer." << std::endl;
                 return 1;
             }
-            options.minimum = std::stoi(argv[i+1]);
+            options.minArea = std::stoi(argv[i+1]);
             i+=2;
 		} else if (strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--epsilon") == 0) {
             // Validate the input type
@@ -187,6 +190,15 @@ int main(int argc, char **argv) {
                 return 1;
             }
             options.variation = std::stoi(argv[i+1]);
+            i+=2;
+		} else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--threshold") == 0) {
+            // Validate the input type
+            options.threshold = std::stof(argv[i+1]); // FIXME: may throw error if not int
+
+            if (options.threshold < 0 && options.threshold > 255) {
+                std::cerr << options.threshold << " is not a valid input. Threshold must be between 0 and 255 inclusive" << std::endl;
+                return 1;
+            }
             i+=2;
 		} else if (strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--outlier-percent") == 0) {
             // Validate the input type
@@ -273,7 +285,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    #pragma omp parallel for
     for (int i=0; i<numFiles; i++) {
         fs::path file = files[i];
         std::string fileName = file.stem();
@@ -300,19 +311,18 @@ int main(int argc, char **argv) {
 	        int image_stack_counter = 0;
             int totalFrames = cap.get(cv::CAP_PROP_FRAME_COUNT);
 
+            #pragma omp parallel for
             for (int j=0; j<totalFrames-1; j++) 
             {   
 	        	cv::Mat imgGray;
-                #pragma omp critical(getframe)
+                #pragma omp critical(getImage)
                 {
-                    // FIXME: This could be problematic if numConcatenate does not divide the number of frames
                     getFrame(cap, imgGray, options.numConcatenate);
-                    j+=options.numConcatenate;
+                    image_stack_counter += options.numConcatenate;
                 }
 
-                image_stack_counter += options.numConcatenate;
                 std::string imgName = fileName + "_" + convertInt(image_stack_counter, 4);
-                std::string imgDir = segmentDir + "/" + fileName + "/" + imgName;
+                std::string imgDir = segmentDir + "/" + fileName;
                 fs::create_directories(imgDir);
 
                 int fill = fillSides(imgGray, options.left, options.right);
