@@ -173,7 +173,7 @@ void segmentImage(const cv::Mat& img, cv::Mat& imgCorrect, std::vector<cv::Rect>
         cv::Mat imgPreprocess;
         preprocess(imgCorrect, imgPreprocess, 1);
         mser(imgPreprocess, bboxes, options.minArea, options.maxArea, options.delta, options.variation, options.epsilon);
-    } else if (imgSNR > 42) {
+    } else if (imgSNR > options.signalToNoise * .75) {
 
         // Create a mask that includes all of the regions of the image with
         // the darkest pixels which MSER method can be performed on.
@@ -322,7 +322,7 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
             continue;
 
         // Re-scale the crop of the image after getting the measurement data written to a file
-        cv::Rect scaledBbox = rescaleRect(bboxes[k], 1.5);
+        cv::Rect scaledBbox = rescaleRect(bboxes[k], 1.2);
 
         // Create a new crop using the intersection of rectangle objects and the image
         std::string correctImgFile = correctCropDir + "/" + imgName + "_" + "crop_" + convertInt(k) + ".png";
@@ -331,6 +331,7 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
 
 	    // Draw the cropped frames on the image to be saved
 	    cv::rectangle(imgBboxes, bboxes[k], cv::Scalar(0, 0, 255));
+	    cv::rectangle(imgBboxes, scaledBbox, cv::Scalar(255, 0, 0));
 
         // Write the image data to the measurement file
         // Format: img,area,major,minor,perimeter,x,y,mean,height
@@ -361,8 +362,8 @@ void saveCrops(const cv::Mat& img, const cv::Mat& imgCorrect, std::vector<cv::Re
 
 cv::Rect rescaleRect(const cv::Rect& rect, float scale)
 {
-    float scaleWidth = rect.width * scale;
-    float scaleHeight = rect.height * scale;
+    float scaleWidth = rect.width * scale - rect.width;
+    float scaleHeight = rect.height * scale - rect.height;
     cv::Rect scaledRect(rect.x - scaleWidth / 2, rect.y - scaleHeight / 2, 
             rect.width + scaleWidth, rect.height + scaleHeight);
 

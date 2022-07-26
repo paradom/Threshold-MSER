@@ -53,8 +53,8 @@ void helpMsg(std::string executable, Options options) {
         << std::left << std::setw(30) << "  -i, --input" << "Directory of video files to segment\n"
         << std::left << std::setw(30) << "  -o, --output-directory" << "Output directory where segmented images should be stored (Default: " << options.outputDirectory << ")\n"
         << std::left << std::setw(30) << "  -n, --num-concatenate" << "The number of frames that will be vertically concatenated (Default: " << options.numConcatenate <<  ")\n"
-        << std::left << std::setw(30) << "  -s, --signal-to-noise" << "The cutoff signal to noise ratio that is used in determining\n"
-        << std::left << std::setw(30) << "" << "which frames from the video file get segmented (Default: " << options.signalToNoise << ")\n"
+        << std::left << std::setw(30) << "  -s, --signal-to-noise" << "The cutoff signal to noise ratio that is used in determining which frames from\n"
+        << std::left << std::setw(30) << "" << "the video file get segmented. Note: This will change as we change the outlier percent (Default: " << options.signalToNoise << ")\n"
         << std::left << std::setw(30) << "  -p, --outlier-percent" << "Percentage of darkest and lightest pixels to throw out before flat-fielding (Default: " << options.outlierPercent << ")\n"
         << std::left << std::setw(30) << "  -M, --maxArea" << "Maximum area of a segmented blob (Default: " << options.maxArea << ")\n" 
         << std::left << std::setw(30) << "  -m, --minArea" << "Minimum area of a segmented blob. (Default: " << options.minArea << ")\n"
@@ -90,15 +90,15 @@ int main(int argc, char **argv) {
     Options options;
     options.input = "";
     options.outputDirectory = "out";
-    options.signalToNoise = 50;
-    options.outlierPercent = .05;
+    options.signalToNoise = 60;
+    options.outlierPercent = .15;
     options.numConcatenate = 1;
     options.minArea = 50;
     options.maxArea = 400000;
-    options.epsilon = 1.3;
+    options.epsilon = 1;
     options.delta = 4;
     options.variation = 100;
-    options.threshold = 140;
+    options.threshold = 160;
     options.fullOutput = false;
     options.left = 0;
     options.right = 0;
