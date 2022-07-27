@@ -380,7 +380,7 @@ void groupRect(std::vector<cv::Rect>& rectList, int groupThreshold, double eps)
     // Third argument of partion is a predicate operator that looks for a method of the class
     // that will return true when elements are apart of the same partition
     std::vector<int> labels;
-    int nclasses = partition(rectList, labels, OverlapRects2(eps));
+    int nclasses = partition(rectList, labels, OverlapRects(eps));
     // int nclasses = partition(rectList, labels, cv::SimilarRects(eps));
 
     // labels correspond to the location of the rectangle in space 

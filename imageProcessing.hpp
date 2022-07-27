@@ -52,36 +52,16 @@ public:
     OverlapRects(double _eps) : eps(_eps) {}
     inline bool operator()(const cv::Rect& r1, const cv::Rect& r2) const
     {
+        double x1 = r1.x + r1.width * 0.5;
+        double x2 = r2.x + r2.width * 0.5;
+        double y1 = r1.y + r1.height * 0.5;
+        double y2 = r2.y + r2.height * 0.5;
+
         double deltax = eps * (r1.width + r2.width) * 0.5;
         double deltay = eps * (r1.height + r2.height) * 0.5;
 
-        return std::abs((r1.x - r2.x) + (r1.width - r2.width) * 0.5) <= deltax &&
-            std::abs((r1.y - r2.y) - (r1.height - r2.height) * 0.5) <= deltay;
-    }
-    double eps;
-};
-
-class OverlapRects2
-{
-public:
-    OverlapRects2(double _eps) : eps(_eps) {}
-    inline bool operator()(const cv::Rect& r1, const cv::Rect& r2) const
-    {
-        if (r1.area() > r2.area()) {
-            float scaleWidth = r1.width * eps - r1.width;
-            float scaleHeight = r1.height * eps - r1.height;
-            cv::Rect scaledR1(r1.x - scaleWidth / 2, r1.y - scaleHeight / 2, 
-                    r1.width + scaleWidth, r1.height + scaleHeight);
-
-            return (scaledR1 & r2).area() > 0;
-        } else {
-            float scaleWidth = r2.width * eps - r2.width;
-            float scaleHeight = r2.height * eps - r2.height;
-            cv::Rect scaledR2(r2.x - scaleWidth / 2, r2.y - scaleHeight / 2, 
-                    r2.width + scaleWidth, r2.height + scaleHeight);
-
-            return (r1 & scaledR2).area() > 0;
-        }
+        return std::abs(x1 - x2) < deltax &&
+            std::abs(y1 - y2) < deltay; 
     }
     double eps;
 };
