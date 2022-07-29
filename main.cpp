@@ -74,18 +74,6 @@ void helpMsg(std::string executable, Options options) {
 }
 
 int main(int argc, char **argv) {
-    // Print the number of threads that will be used by this program
-    #pragma omp parallel
-    {
-        #pragma omp single
-        {
-            #if defined(WITH_OPENMP)
-            int nthreads = omp_get_num_threads();
-            std::cout << "OMP Num Threads: " << nthreads << std::endl;
-            #endif
-        }
-    }
-
     // Set the default options
     Options options;
     options.input = "";
@@ -106,6 +94,17 @@ int main(int argc, char **argv) {
     // TODO: more robust options with std::find may be worth it
     if (argc == 1) {
         helpMsg(argv[0], options);
+        // Print the number of threads that will be used by this program
+        #pragma omp parallel
+        {
+            #pragma omp single
+            {
+                #if defined(WITH_OPENMP)
+                int nthreads = omp_get_num_threads();
+                std::cout << "OMP Num Threads: " << nthreads << std::endl;
+                #endif
+            }
+        }
     }
 
     int i = 1;
@@ -114,7 +113,7 @@ int main(int argc, char **argv) {
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             helpMsg(argv[0], options);
 
-            return 1;
+            return 0;
         }
         else if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--input") == 0) {
             options.input = argv[i + 1];
