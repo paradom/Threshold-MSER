@@ -318,6 +318,7 @@ int main(int argc, char **argv) {
                 {
                     getFrame(cap, imgGray, options.numConcatenate);
                     image_stack_counter += options.numConcatenate;
+                    j += options.numConcatenate - 1;
                 }
 
                 std::string imgName = fileName + "_" + convertInt(image_stack_counter, 4);
